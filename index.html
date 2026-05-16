@@ -746,12 +746,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif;back
     <!-- 요일별 수업시간 (요구사항 2) -->
     <div class="fl" style="margin-top:8px">요일별 수업 시간 <span style="font-size:10px;color:var(--text3);font-weight:400">(예: 14:00-15:30)</span></div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:10px">
-      ${['월','화','수','목','금'].map((d,i)=>`
       <div>
-        <div style="font-size:10px;font-weight:600;color:var(--text2);text-align:center;margin-bottom:3px">${d}</div>
-        <input class="fi fsch" data-wd="${i+1}" type="text" placeholder="--:--" maxlength="11"
-          style="padding:5px 4px;font-size:10px;text-align:center;margin-bottom:0">
-      </div>`).join('')}
+        <div style="font-size:10px;font-weight:600;color:var(--text2);text-align:center;margin-bottom:3px">월</div>
+        <input class="fi fsch" data-wd="1" type="text" placeholder="--:--" maxlength="11" style="padding:5px 4px;font-size:10px;text-align:center;margin-bottom:0">
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--text2);text-align:center;margin-bottom:3px">화</div>
+        <input class="fi fsch" data-wd="2" type="text" placeholder="--:--" maxlength="11" style="padding:5px 4px;font-size:10px;text-align:center;margin-bottom:0">
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--text2);text-align:center;margin-bottom:3px">수</div>
+        <input class="fi fsch" data-wd="3" type="text" placeholder="--:--" maxlength="11" style="padding:5px 4px;font-size:10px;text-align:center;margin-bottom:0">
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--text2);text-align:center;margin-bottom:3px">목</div>
+        <input class="fi fsch" data-wd="4" type="text" placeholder="--:--" maxlength="11" style="padding:5px 4px;font-size:10px;text-align:center;margin-bottom:0">
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--text2);text-align:center;margin-bottom:3px">금</div>
+        <input class="fi fsch" data-wd="5" type="text" placeholder="--:--" maxlength="11" style="padding:5px 4px;font-size:10px;text-align:center;margin-bottom:0">
+      </div>
     </div>
     <div class="mbtns">
       <button id="cancelAddStu" class="mbc">취소</button>
@@ -1512,36 +1526,4 @@ function renderAtt(){
   if(!clsObj) return;
   const dk=getAttDK();const isToday=dk===todayKey();
   if(!DB.attendance[dk]) DB.attendance[dk]={};
-  const dd=DB.attendance[dk];
-  const stus=DB.students.filter(s=>s.cls===clsObj.id);
-  let p=0,l=0,a=0;
-
-  // 수업 상태 계산 헬퍼 — 색상 분류
-  function getStudentStatus(stu){
-    const t=stuTimers[stu.id];
-    if(!t||!t.checkInTime) return 'none';
-    const elapsed=getElapsed(stu.id);
-    const durMin=t.durMin||60;
-    const durSec=durMin*60;
-    const pct=elapsed/durSec*100;
-    if(elapsed>=durSec) return 'over';       // 🔴 수업 종료
-    if(pct>=75) return 'warn';               // 🟡 15분 미만
-    return 'active';                         // 🟢 수업 중
-  }
-
-  // 정렬: 수업 중(active/warn) 먼저, 종료(over) 뒤
-  const sorted=[...stus].sort((a,b)=>{
-    const sa=getStudentStatus(a);const sb=getStudentStatus(b);
-    const order={'active':0,'warn':1,'none':2,'over':3};
-    return (order[sa]??2)-(order[sb]??2);
-  });
-
-  const rows=sorted.map((stu,i)=>{
-    const v=dd[stu.id]||'none';
-    if(v==='p') p++;else if(v==='l') l++;else if(v==='a') a++;
-    const bc=v==='p'?' p':v==='a'?' a':v==='l'?' l':'';
-    const ico=v==='p'?'✓':v==='a'?'✕':v==='l'?'◷':'—';
-    const isP=v==='p'||v==='l';
-    const isExp=expandedStu===stu.id;
-    const t=stuTimers[stu.id];
-    const ticke
+  const 
