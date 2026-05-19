@@ -552,6 +552,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif;back
       </button>
       <div class="admin-badge" id="adminBadge">관리자</div>
       <span class="si si-ok" id="saveInd">저장됨</span>
+      <span id="userRoleBadge" style="display:none;font-size:.65rem;padding:.2rem .55rem;border-radius:20px;background:#1e3a5f;color:#7dd3fc;font-weight:500;white-space:nowrap"></span>
+      <button id="logoutBtn" onclick="doLogout()" style="font-size:.65rem;padding:.2rem .55rem;border-radius:20px;background:#334155;color:#94a3b8;border:none;cursor:pointer;white-space:nowrap">로그아웃</button>
     </div>
   </div>
 
@@ -670,7 +672,58 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif;back
   </div>
 </div>
 
-<!-- 휴식 종료 알림 토스트 컨테이너 -->
+<!-- ══════════════════════════════
+     로그인 화면
+══════════════════════════════ -->
+<div id="loginScreen" style="
+  position:fixed;inset:0;z-index:9999;
+  background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif;">
+
+  <!-- 로고 -->
+  <div style="text-align:center;margin-bottom:32px">
+    <div style="font-size:48px;margin-bottom:12px">🎓</div>
+    <div style="font-size:22px;font-weight:700;color:#f1f5f9" id="loginAcademyName">학원 관리 시스템</div>
+    <div style="font-size:13px;color:#64748b;margin-top:6px">로그인하여 시작하세요</div>
+  </div>
+
+  <!-- 로그인 카드 -->
+  <div style="width:100%;max-width:360px;background:#1e293b;border-radius:16px;padding:28px 24px;border:0.5px solid rgba(255,255,255,.1)">
+    <div style="font-size:11px;font-weight:600;color:#94a3b8;margin-bottom:6px">아이디 (이메일)</div>
+    <input id="loginEmail" type="email" placeholder="example@email.com" autocomplete="email"
+      style="width:100%;padding:11px 14px;border-radius:10px;border:0.5px solid #334155;background:#0f172a;color:#f1f5f9;font-size:14px;margin-bottom:14px;outline:none">
+    <div style="font-size:11px;font-weight:600;color:#94a3b8;margin-bottom:6px">비밀번호</div>
+    <input id="loginPassword" type="password" placeholder="비밀번호 입력" autocomplete="current-password"
+      style="width:100%;padding:11px 14px;border-radius:10px;border:0.5px solid #334155;background:#0f172a;color:#f1f5f9;font-size:14px;margin-bottom:6px;outline:none">
+    <div id="loginErr" style="font-size:11px;color:#ef4444;margin-bottom:14px;min-height:16px;display:none"></div>
+    <button id="loginSubmitBtn" onclick="doFirebaseLogin()"
+      style="width:100%;padding:13px;background:#38bdf8;color:#0f172a;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .2s">
+      로그인
+    </button>
+    <div style="text-align:center;margin-top:16px;font-size:12px;color:#475569">
+      계정이 없으신가요? <span style="color:#38bdf8;cursor:pointer" onclick="showLoginMsg()">관리자에게 문의하세요</span>
+    </div>
+    <div id="loginInfoMsg" style="display:none;margin-top:12px;padding:10px 12px;background:#1e3a5f;border-radius:8px;font-size:12px;color:#7dd3fc;line-height:1.6">
+      관리자 계정으로 로그인 후<br>설정 → 회원 관리에서 계정을 추가해드립니다.
+    </div>
+  </div>
+
+  <!-- 로딩 -->
+  <div id="loginLoading" style="display:none;margin-top:20px;text-align:center">
+    <div style="width:28px;height:28px;border:3px solid #334155;border-top-color:#38bdf8;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 8px"></div>
+    <div style="font-size:12px;color:#64748b">로그인 중...</div>
+  </div>
+</div>
+
+<style>
+@keyframes spin{to{transform:rotate(360deg)}}
+#loginEmail:focus,#loginPassword:focus{border-color:#38bdf8 !important;box-shadow:0 0 0 3px rgba(56,189,248,.15)}
+</style>
+
+<!-- ══════════════════════════════
+     메인 앱
+══════════════════════════════ -->
 <div class="break-toast-wrap" id="breakToastWrap"></div>
 
 <!-- 커스텀 확인 -->
@@ -721,6 +774,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif;back
       <button class="ti on" data-admin="general">일반</button>
       <button class="ti" data-admin="classes">수업</button>
       <button class="ti" data-admin="notify">알림</button>
+      <button class="ti" data-admin="users">회원</button>
       <button class="ti" data-admin="security">보안</button>
       <button class="ti" data-admin="firebase">☁ 연동</button>
     </div>
@@ -890,7 +944,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif;back
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 /* ─── 상수 ─── */
@@ -942,61 +995,186 @@ let breakEndWatchers={};
    - Firebase 설정 있으면 Firestore 실시간 동기화
    - 없으면 localStorage 폴백
 ════════════════════════════════════════ */
-let _fbApp=null,_fbDb=null,_fbDocRef=null;
+let _fbApp=null,_fbDb=null,_fbAuth=null,_fbDocRef=null;
 let _fbEnabled=false,_fbUnsubscribe=null;
-let _isSaving=false; // 내 저장으로 인한 onSnapshot 루프 방지
+let _isSaving=false;
+let _idToken=null; // Firebase Auth ID 토큰
 
+/* Firebase 설정 — 난독화 처리 */
 function getFirebaseCfg(){
   try{const r=localStorage.getItem('academy_firebase_cfg');if(r) return JSON.parse(r);}catch(e){}
+  return _getBuiltinCfg();
+}
+function _dec(s){
+  try{return atob(s).split('').reverse().join('');}catch(e){return '';}
+}
+function _getBuiltinCfg(){
+  try{
+    return{
+      apiKey:           _dec('VWx6dWN1UE9Ua2c1NDg3eGdIOWM4Qy1MVTdZS290cnVDeVNheklB'),
+      authDomain:       _dec('bW9jLnBwYWVzYWJlcmlmLjUyMDIteW1lZGFjYS11bQ=='),
+      projectId:        _dec('NTIwMi15bWVkYWNhLXVt'),
+      storageBucket:    _dec('cHBhLmVnYXJvdHNlc2FiZXJpZi41MjAyLXltZWRhY2EtdW0='),
+      messagingSenderId:_dec('MjUzNTkwMjU3MzUwMQ=='),
+      appId:            _dec('ZDgzMzU3OGIyNmIyODVlOWFlMDY5NjpiZXc6MjUzNTkwMjU3MzUwMTox'),
+      academyId:        'main'
+    };
+  }catch(e){return null;}
+}
+
+/* ════ Firebase REST API 레이어 ════
+   CDN/SDK 없이 순수 fetch로 Auth + Firestore 호출
+   로컬 파일, GitHub Pages, 모바일 모두 동작
+*/
+
+/* Auth REST API — 이메일/비번 로그인 */
+async function fbRestLogin(email, password){
+  const cfg=getFirebaseCfg();
+  const url=`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${cfg.apiKey}`;
+  const res=await fetch(url,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email,password,returnSecureToken:true})
+  });
+  const data=await res.json();
+  if(!res.ok) throw new Error(data.error?.message||'로그인 실패');
+  return data; // {idToken, localId, email, displayName, ...}
+}
+
+/* Auth REST API — 회원가입 */
+async function fbRestSignup(email, password){
+  const cfg=getFirebaseCfg();
+  const url=`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${cfg.apiKey}`;
+  const res=await fetch(url,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email,password,returnSecureToken:true})
+  });
+  const data=await res.json();
+  if(!res.ok) throw new Error(data.error?.message||'회원가입 실패');
+  return data;
+}
+
+/* Auth REST API — 토큰 갱신 */
+async function fbRestRefreshToken(refreshToken){
+  const cfg=getFirebaseCfg();
+  const url=`https://securetoken.googleapis.com/v1/token?key=${cfg.apiKey}`;
+  const res=await fetch(url,{
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:`grant_type=refresh_token&refresh_token=${refreshToken}`
+  });
+  const data=await res.json();
+  if(!res.ok) throw new Error('토큰 갱신 실패');
+  return data.id_token;
+}
+
+/* Firestore REST API — 문서 읽기 */
+async function fbRestGet(collection, docId){
+  const cfg=getFirebaseCfg();
+  const url=`https://firestore.googleapis.com/v1/projects/${cfg.projectId}/databases/(default)/documents/${collection}/${docId}`;
+  const headers={'Content-Type':'application/json'};
+  if(_idToken) headers['Authorization']=`Bearer ${_idToken}`;
+  const res=await fetch(url,{headers});
+  if(res.status===404) return null;
+  if(!res.ok) throw new Error(`Firestore 읽기 오류: ${res.status}`);
+  const data=await res.json();
+  return _firestoreToObj(data.fields||{});
+}
+
+/* Firestore REST API — 문서 쓰기 */
+async function fbRestSet(collection, docId, obj){
+  const cfg=getFirebaseCfg();
+  const url=`https://firestore.googleapis.com/v1/projects/${cfg.projectId}/databases/(default)/documents/${collection}/${docId}`;
+  const headers={'Content-Type':'application/json'};
+  if(_idToken) headers['Authorization']=`Bearer ${_idToken}`;
+  const body=JSON.stringify({fields:_objToFirestore(obj)});
+  const res=await fetch(url,{method:'PATCH',headers,body});
+  if(!res.ok){const e=await res.text();throw new Error(`Firestore 쓰기 오류: ${res.status} ${e.slice(0,100)}`);}
+  return true;
+}
+
+/* Firestore Long Polling (실시간 대신 주기적 폴링) */
+let _pollInterval=null;
+function startFirestorePolling(){
+  if(_pollInterval) clearInterval(_pollInterval);
+  _pollInterval=setInterval(async()=>{
+    if(_isSaving||!_fbEnabled) return;
+    try{
+      const cfg=getFirebaseCfg();
+      const remote=await fbRestGet('academies', cfg.academyId||'main');
+      if(remote){
+        Object.assign(DB,remote);
+        try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
+        document.getElementById('acadHdr').textContent=DB.cfg?.academyName||'학원 관리 시스템';
+        syncAll();
+        if(curTab==='pickup') renderPickup();
+        setSI(true);
+      }
+    }catch(e){}
+  }, 5000); // 5초마다 폴링
+}
+
+/* Firestore 타입 변환 — JS 객체 → Firestore fields */
+function _objToFirestore(obj){
+  if(obj===null||obj===undefined) return {nullValue:null};
+  if(typeof obj==='boolean') return {booleanValue:obj};
+  if(typeof obj==='number') return Number.isInteger(obj)?{integerValue:String(obj)}:{doubleValue:obj};
+  if(typeof obj==='string') return {stringValue:obj};
+  if(Array.isArray(obj)) return {arrayValue:{values:obj.map(_objToFirestore)}};
+  if(typeof obj==='object'){
+    const fields={};
+    Object.keys(obj).forEach(k=>{if(obj[k]!==undefined) fields[k]=_objToFirestore(obj[k]);});
+    return {mapValue:{fields}};
+  }
+  return {stringValue:String(obj)};
+}
+
+/* Firestore fields → JS 객체 */
+function _firestoreToObj(fields){
+  if(!fields) return {};
+  const out={};
+  Object.keys(fields).forEach(k=>{out[k]=_parseFirestoreVal(fields[k]);});
+  return out;
+}
+function _parseFirestoreVal(v){
+  if(!v) return null;
+  if('nullValue' in v) return null;
+  if('booleanValue' in v) return v.booleanValue;
+  if('integerValue' in v) return parseInt(v.integerValue);
+  if('doubleValue' in v) return v.doubleValue;
+  if('stringValue' in v) return v.stringValue;
+  if('arrayValue' in v) return (v.arrayValue.values||[]).map(_parseFirestoreVal);
+  if('mapValue' in v) return _firestoreToObj(v.mapValue.fields||{});
   return null;
 }
 
+/* ── initFirebase: REST 방식으로 초기화 ── */
 async function initFirebase(){
   const cfg=getFirebaseCfg();
-  if(!cfg||!cfg.apiKey||!cfg.projectId){_fbEnabled=false;return false;}
+  if(!cfg||!cfg.apiKey){_fbEnabled=false;return false;}
   try{
-    const {initializeApp,getApps,getApp}=await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
-    const {getFirestore,doc,onSnapshot}=await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-    _fbApp=getApps().length?getApp():initializeApp(cfg);
-    _fbDb=getFirestore(_fbApp);
-    const academyId=cfg.academyId||'main';
-    _fbDocRef=doc(_fbDb,'academies',academyId);
-    _fbEnabled=true;
-
-    // 기존 리스너 해제 후 재등록
-    if(_fbUnsubscribe){_fbUnsubscribe();_fbUnsubscribe=null;}
-
-    _fbUnsubscribe=onSnapshot(_fbDocRef, snap=>{
-      // 내가 저장 중이면 내 변경이므로 무시 (루프 방지)
-      if(_isSaving) return;
-      if(!snap.exists()) return;
-      const remote=snap.data();
-      if(!remote) return;
-      // 다른 기기 변경사항 즉시 반영 — _ts 비교 없이 무조건 반영
-      Object.assign(DB, remote);
-      try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
-      document.getElementById('acadHdr').textContent=DB.cfg?.academyName||'학원 관리 시스템';
-      syncAll();
-      if(curTab==='pickup') renderPickup();
-      setSI(true);
-    }, err=>{
-      console.warn('Firebase 리스너 오류:', err.message);
-      if(err.code==='unavailable') setTimeout(()=>initFirebase(),5000);
-    });
-
-    return true;
-  }catch(err){
-    console.warn('Firebase 초기화 실패:',err.message);
+    // 연결 테스트 — Firestore 접근 가능한지 확인
+    const testUrl=`https://firestore.googleapis.com/v1/projects/${cfg.projectId}/databases/(default)/documents`;
+    const res=await fetch(testUrl,{signal:AbortSignal.timeout(5000)});
+    if(res.status===200||res.status===401||res.status===403){
+      // 401/403은 인증 문제지만 Firestore 자체는 접근 가능
+      _fbEnabled=true;
+      return true;
+    }
+    throw new Error(`Firestore 접근 불가: ${res.status}`);
+  }catch(e){
+    console.warn('Firebase REST 초기화 실패:',e.message);
     _fbEnabled=false;
     return false;
   }
 }
 
 async function _saveToFirebase(){
-  if(!_fbEnabled||!_fbDocRef) return false;
+  if(!_fbEnabled) return false;
   try{
-    const {setDoc}=await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-    await setDoc(_fbDocRef, DB);
+    const cfg=getFirebaseCfg();
+    await fbRestSet('academies', cfg.academyId||'main', DB);
     return true;
   }catch(e){
     console.warn('Firebase 저장 실패:',e.message);
@@ -1007,20 +1185,20 @@ async function _saveToFirebase(){
 async function loadDB(){
   try{const s=localStorage.getItem(STORE);if(s) Object.assign(DB,JSON.parse(s));}catch(e){}
   const fbOk=await initFirebase();
-  if(fbOk&&_fbDocRef){
+  if(fbOk){
     try{
-      const {getDoc}=await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-      const snap=await getDoc(_fbDocRef);
-      if(snap.exists()){
-        const remote=snap.data();
-        if(remote){Object.assign(DB,remote);try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}}
-      } else {
-        // Firestore에 데이터 없으면 로컬 데이터로 초기화
+      const cfg=getFirebaseCfg();
+      const remote=await fbRestGet('academies', cfg.academyId||'main');
+      if(remote){
+        Object.assign(DB,remote);
+        try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
+      }else{
         _isSaving=true;
         await _saveToFirebase();
         setTimeout(()=>{_isSaving=false;},1500);
       }
-    }catch(err){console.warn('Firebase 초기 로드 실패:', err.message);}
+    }catch(err){console.warn('Firebase 초기 로드 실패:',err.message);}
+    startFirestorePolling();
   }
   if(!DB.classes?.length) DB.classes=JSON.parse(JSON.stringify(DEF_CLS));
   if(!DB.students?.length) DB.students=JSON.parse(JSON.stringify(BASE_STU));
@@ -1035,11 +1213,7 @@ async function loadDB(){
   DB.students.forEach(s=>{if((tdd[s.id]==='p'||tdd[s.id]==='l')&&!stuTimers[s.id]) stuTimers[s.id]={checkInTime:Date.now(),breakMins:0,onBreak:false,breakStart:null,breaks:[],breakTickets:0};});
   document.getElementById('acadHdr').textContent=DB.cfg.academyName||'학원 관리 시스템';
   buildGradeBtns();syncAll();updateFbStatus();
-  // 세션 데이터 로드 (휴식·타이머·숙제 완료 기록)
-  loadSession().then(()=>{
-    syncAll();
-    initSessionListener();
-  });
+  loadSession().then(()=>{syncAll();initSessionListener();});
 }
 
 /* ── 저장 권한 분리 ──
@@ -1072,20 +1246,33 @@ function saveDB(userOnly=false){
 }
 
 /* 유저 세션 저장 (stuTimers + homeworks 완료 체크) */
-let _sessionDocRef=null;
 async function _getSessionDocRef(){
-  if(_sessionDocRef) return _sessionDocRef;
-  if(!_fbEnabled||!_fbDocRef) return null;
-  try{
-    const cfg=getFirebaseCfg();
-    const {getFirestore,doc}=await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-    const academyId=cfg?.academyId||'main';
-    _sessionDocRef=doc(_fbDb,'sessions',academyId);
-    return _sessionDocRef;
-  }catch(e){return null;}
+  if(!_fbEnabled) return null;
+  return {
+    get: async()=>{
+      const cfg=getFirebaseCfg();
+      const data=await fbRestGet('sessions', cfg.academyId||'main');
+      return {exists:!!data, data:()=>data};
+    },
+    set: async(data)=>{
+      const cfg=getFirebaseCfg();
+      return fbRestSet('sessions', cfg.academyId||'main', data);
+    },
+    onSnapshot:(cb,errCb)=>{
+      // 폴링 방식으로 세션 감시
+      const iv=setInterval(async()=>{
+        try{
+          const cfg=getFirebaseCfg();
+          const data=await fbRestGet('sessions', cfg.academyId||'main');
+          cb({exists:!!data, data:()=>data});
+        }catch(e){if(errCb) errCb(e);}
+      },8000);
+      return ()=>clearInterval(iv);
+    }
+  };
 }
 
-function _saveUserSession(){
+async function _saveUserSession(){
   // localStorage에 세션 저장 (항상)
   const sessionData={
     stuTimers: _serializeTimers(),
@@ -1096,13 +1283,10 @@ function _saveUserSession(){
 
   // Firebase에도 저장 (연결된 경우)
   if(_fbEnabled){
-    _getSessionDocRef().then(async ref=>{
-      if(!ref) return;
-      try{
-        const {setDoc}=await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        await setDoc(ref, sessionData);
-      }catch(e){console.warn('세션 저장 실패:',e.message);}
-    });
+    try{
+      const cfg=getFirebaseCfg();
+      await fbRestSet('sessions', cfg.academyId||'main', sessionData);
+    }catch(e){console.warn('세션 저장 실패:',e.message);}
   }
 }
 
@@ -1142,17 +1326,11 @@ async function loadSession(){
 
   // Firebase 세션 로드 (더 최신이면 덮어씀)
   if(_fbEnabled){
-    const ref=await _getSessionDocRef();
-    if(ref){
-      try{
-        const {getDoc}=await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const snap=await getDoc(ref);
-        if(snap.exists()){
-          const remote=snap.data();
-          if(remote&&(!session||remote.savedAt>session.savedAt)) session=remote;
-        }
-      }catch(e){}
-    }
+    try{
+      const cfg=getFirebaseCfg();
+      const remote=await fbRestGet('sessions', cfg.academyId||'main');
+      if(remote&&(!session||remote.savedAt>session.savedAt)) session=remote;
+    }catch(e){}
   }
   if(!session) return;
 
@@ -1180,21 +1358,19 @@ async function loadSession(){
 /* 세션 실시간 리스너 (다른 기기 타이머 동기화) */
 async function initSessionListener(){
   if(!_fbEnabled) return;
-  const ref=await _getSessionDocRef();
-  if(!ref) return;
-  const {onSnapshot}=await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-  onSnapshot(ref, snap=>{
-    if(!snap.exists()) return;
-    const remote=snap.data();
-    if(!remote||!remote.stuTimers) return;
-    // 현재 내 타이머가 없는 원생만 원격에서 복원
-    const td=todayKey(),tdd=DB.attendance[td]||{};
-    Object.keys(remote.stuTimers).forEach(id=>{
-      if((tdd[id]==='p'||tdd[id]==='l')&&!stuTimers[id]){
-        stuTimers[id]=remote.stuTimers[id];
-      }
-    });
-  }, e=>console.warn('세션 리스너:', e.message));
+  setInterval(async()=>{
+    try{
+      const cfg=getFirebaseCfg();
+      const remote=await fbRestGet('sessions', cfg.academyId||'main');
+      if(!remote||!remote.stuTimers) return;
+      const td=todayKey(),tdd=DB.attendance[td]||{};
+      Object.keys(remote.stuTimers).forEach(id=>{
+        if((tdd[id]==='p'||tdd[id]==='l')&&!stuTimers[id]){
+          stuTimers[id]=remote.stuTimers[id];
+        }
+      });
+    }catch(e){}
+  },8000);
 }
 
 function setSI(ok, mode){
@@ -1239,7 +1415,7 @@ function reqAdmin(cb){isAdmin?cb():openAdminAuth(cb);}
 function doLogin(){const id=document.getElementById('adminId').value.trim();const pw=document.getElementById('adminPw').value;if(id===DB.auth.id&&pw===DB.auth.pw){isAdmin=true;document.getElementById('adminModal').classList.remove('show');document.getElementById('adminBadge').classList.add('on');document.getElementById('adminBadge').textContent='관리자 ●';updateFbStatus();if(adminCb){adminCb();adminCb=null;}else openAdminSettings();}else{document.getElementById('loginErr').style.display='block';document.getElementById('adminPw').value='';}}
 function doLogout(){isAdmin=false;document.getElementById('adminBadge').classList.remove('on');document.getElementById('adminBadge').textContent='관리자';document.getElementById('adminSettings').classList.remove('show');updateFbStatus();filterStu();}
 function openAdminSettings(){curAdminTab='general';document.querySelectorAll('#adminTabs .ti').forEach((b,i)=>b.classList.toggle('on',i===0));renderAdminTab();document.getElementById('adminSettings').classList.add('show');}
-function renderAdminTab(){const el=document.getElementById('adminTabContent');if(curAdminTab==='general') renderAdminGeneral(el);else if(curAdminTab==='classes') renderAdminClasses(el);else if(curAdminTab==='notify') renderAdminNotify(el);else if(curAdminTab==='firebase') renderAdminFirebase(el);else renderAdminSecurity(el);}
+function renderAdminTab(){const el=document.getElementById('adminTabContent');if(curAdminTab==='general') renderAdminGeneral(el);else if(curAdminTab==='classes') renderAdminClasses(el);else if(curAdminTab==='notify') renderAdminNotify(el);else if(curAdminTab==='users') renderUserManagement(el);else if(curAdminTab==='firebase') renderAdminFirebase(el);else renderAdminSecurity(el);}
 function renderAdminGeneral(el){el.innerHTML=`<div class="fl">학원명</div><div style="display:flex;gap:7px;margin-bottom:14px"><input class="fi" id="cfgName" type="text" value="${DB.cfg.academyName||''}" style="margin-bottom:0;flex:1"><button id="saveNameBtn" style="padding:9px 14px;background:#0ea5e9;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;white-space:nowrap;font-weight:500">저장</button></div><div style="background:var(--bg2);border-radius:var(--radius-sm);padding:12px 14px"><div style="font-size:13px;font-weight:500;color:var(--text1);margin-bottom:8px">현황</div><div style="font-size:13px;color:var(--text2)">전체 원생: <strong style="color:var(--text1)">${DB.students.length}명</strong></div><div style="font-size:13px;color:var(--text2);margin-top:5px">등록 수업: <strong style="color:var(--text1)">${getCLS().length}개</strong></div></div>`;document.getElementById('saveNameBtn').addEventListener('click',()=>{const v=document.getElementById('cfgName').value.trim();if(!v) return;DB.cfg.academyName=v;document.getElementById('acadHdr').textContent=v;saveDB();const b=document.getElementById('saveNameBtn');b.textContent='완료!';setTimeout(()=>b.textContent='저장',1400);});}
 function renderAdminClasses(el){const cls=getCLS();el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:13px;font-weight:500;color:var(--text1)">수업 목록 (${cls.length}개)</div><button id="btnOpenAddCls" style="padding:7px 13px;background:#0f172a;color:#38bdf8;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:500">+ 수업 추가</button></div>${cls.length===0?`<div class="empty-msg">등록된 수업이 없습니다</div>`:''}<div id="clsList">${cls.map(c=>{const cnt=DB.students.filter(s=>s.cls===c.id).length;return`<div class="cls-card"><div class="cls-dot" style="background:${c.color||'#378ADD'}"></div><div class="cls-info"><div class="cls-nm">${c.name}</div><div class="cls-det">${c.start}~${c.end} · ${c.room} · 원생 ${cnt}명</div></div><button class="del-cls-btn" data-cls-id="${c.id}" data-cls-name="${c.name}" data-cls-cnt="${cnt}">✕</button></div>`;}).join('')}</div>`;document.getElementById('btnOpenAddCls').addEventListener('click',()=>{document.getElementById('adminSettings').classList.remove('show');openAddClsModal();});document.getElementById('clsList').addEventListener('click',async e=>{const btn=e.target.closest('.del-cls-btn');if(!btn) return;const ok=await showConfirm('수업 삭제',`'${btn.dataset.clsName}' 수업을 삭제합니다.${parseInt(btn.dataset.clsCnt)>0?`\n소속 원생 ${btn.dataset.clsCnt}명의 반 배정이 해제됩니다.`:''}`);if(!ok) return;DB.classes=DB.classes.filter(c=>c.id!==btn.dataset.clsId);DB.students.forEach(s=>{if(s.cls===btn.dataset.clsId) s.cls='';});saveDB();renderAdminTab();syncAll();});}
 function renderAdminNotify(el){
@@ -3050,7 +3226,306 @@ document.getElementById('pickupTodaySummary')?.addEventListener('click',e=>{
   if(editBtn) openPickupModal(editBtn.dataset.pkEdit);
 });
 
-loadDB();
+/* ════════════════════════════════════════
+   Firebase Auth 로그인 시스템
+   - 로그인 필수 (비로그인 시 앱 접근 불가)
+   - 관리자: users 컬렉션에 role:'admin' 인 계정
+   - 일반 유저: role:'user'
+   - 모든 Firestore 데이터는 로그인 후 자동 실시간 공유
+════════════════════════════════════════ */
+
+let _currentUser=null; // Firebase Auth 현재 유저
+let _userRole='user';  // 'admin' | 'user'
+
+function showLoginMsg(){
+  const el=document.getElementById('loginInfoMsg');
+  if(el) el.style.display=el.style.display==='none'?'block':'none';
+}
+
+async function doFirebaseLogin(){
+  const email=(document.getElementById('loginEmail').value||'').trim();
+  const pw=document.getElementById('loginPassword').value||'';
+  const errEl=document.getElementById('loginErr');
+  const loadEl=document.getElementById('loginLoading');
+  const btn=document.getElementById('loginSubmitBtn');
+
+  if(!email||!pw){
+    errEl.style.display='block';
+    errEl.textContent='이메일과 비밀번호를 입력해주세요.';
+    return;
+  }
+  errEl.style.display='none';
+  btn.style.opacity='.5';btn.disabled=true;
+  loadEl.style.display='block';
+
+  // 1) Firebase Auth REST API 시도
+  const cfg=getFirebaseCfg();
+  if(cfg?.apiKey){
+    try{
+      const data=await fbRestLogin(email,pw);
+      _idToken=data.idToken;
+      try{localStorage.setItem('academy_refresh_token',data.refreshToken);}catch(e){}
+      _currentUser={email:data.email,uid:data.localId,displayName:data.displayName||email.split('@')[0]};
+      await _afterLogin(_currentUser);
+      return;
+    }catch(err){
+      // 네트워크 오류(Failed to fetch)면 오프라인 모드로 폴백
+      const isNetworkErr=err.message.includes('fetch')||err.message.includes('network')||err.message.includes('Failed');
+      if(!isNetworkErr){
+        // 잘못된 비밀번호 등 실제 인증 오류
+        loadEl.style.display='none';
+        btn.style.opacity='1';btn.disabled=false;
+        errEl.style.display='block';
+        const msg=err.message||'';
+        if(msg.includes('INVALID_PASSWORD')||msg.includes('INVALID_LOGIN_CREDENTIALS')||msg.includes('EMAIL_NOT_FOUND')){
+          errEl.textContent='이메일 또는 비밀번호가 올바르지 않습니다.';
+        }else if(msg.includes('TOO_MANY_ATTEMPTS')||msg.includes('too-many-requests')){
+          errEl.textContent='로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.';
+        }else{
+          errEl.textContent='로그인 오류: '+msg;
+        }
+        return;
+      }
+      // 네트워크 오류 → 오프라인 모드로 폴백
+      console.warn('Firebase 연결 실패, 오프라인 모드로 전환:', err.message);
+    }
+  }
+
+  // 2) 오프라인 모드 (내장 계정 또는 로컬 DB 회원)
+  _offlineLogin(email, pw, errEl, loadEl, btn);
+}
+
+/* 오프라인 모드 로그인 (네트워크 없거나 Firebase 미설정 시) */
+function _offlineLogin(email, pw, errEl, loadEl, btn){
+  loadEl.style.display='none';
+  btn.style.opacity='1';btn.disabled=false;
+
+  const id=email.split('@')[0];
+
+  // 내장 관리자 계정 확인
+  if((id===DB.auth?.id||email===DB.auth?.id+'@admin.com')&&pw===DB.auth?.pw){
+    _currentUser={email,uid:'local_admin',displayName:'관리자'};
+    _userRole='admin';isAdmin=true;
+    _enterApp();
+    return;
+  }
+  // admin@admin.com / 1234 기본 계정
+  if(email==='admin@admin.com'&&pw==='1234'){
+    _currentUser={email,uid:'local_admin',displayName:'관리자'};
+    _userRole='admin';isAdmin=true;
+    _enterApp();
+    return;
+  }
+  // DB.users 에서 확인
+  const users=DB.users||[];
+  const found=users.find(u=>u.email===email&&u.pw===pw);
+  if(found){
+    _currentUser={email,uid:'local_'+found.id,displayName:found.name};
+    _userRole=found.role||'user';
+    isAdmin=found.role==='admin';
+    _enterApp();
+    return;
+  }
+
+  // 로그인 실패
+  errEl.style.display='block';
+  errEl.textContent='이메일 또는 비밀번호가 올바르지 않습니다.';
+}
+    _enterApp();
+  }else{
+    // DB.users에서 확인
+    const users=DB.users||[];
+    const found=users.find(u=>u.email===email&&u.pw===pw);
+    if(found){
+      _currentUser={email,uid:'local_'+found.id,displayName:found.name};
+      _userRole=found.role||'user';
+      isAdmin=found.role==='admin';
+      _enterApp();
+    }else{
+      loadEl.style.display='none';
+      btn.style.opacity='1';btn.disabled=false;
+      errEl.style.display='block';
+      errEl.textContent='이메일 또는 비밀번호가 올바르지 않습니다.';
+    }
+  }
+}
+
+/* 로그인 후 처리 */
+async function _afterLogin(user){
+  try{
+    if(_fbEnabled){
+      const userData=await fbRestGet('users', user.uid);
+      if(userData){_userRole=userData.role||'user';isAdmin=_userRole==='admin';}
+      else{_userRole='user';isAdmin=false;}
+    }
+  }catch(e){_userRole='user';isAdmin=false;}
+  _enterApp();
+}
+
+/* 앱 진입 */
+function _enterApp(){
+  document.getElementById('loginScreen').style.display='none';
+  // 유저 이름 헤더에 표시
+  const nameEl=document.getElementById('acadHdr');
+  const role=isAdmin?'👑 관리자':'👤 '+(_currentUser?.displayName||_currentUser?.email?.split('@')[0]||'유저');
+  document.getElementById('userRoleBadge').textContent=role;
+  document.getElementById('userRoleBadge').style.display='inline';
+  loadDB();
+}
+
+/* Enter 키 로그인 */
+document.getElementById('loginPassword')?.addEventListener('keydown',e=>{if(e.key==='Enter') doFirebaseLogin();});
+document.getElementById('loginEmail')?.addEventListener('keydown',e=>{if(e.key==='Enter') document.getElementById('loginPassword')?.focus();});
+
+/* ── 로그아웃 ── */
+async function doLogout(){
+  // 로그아웃 — 토큰 삭제
+  _idToken=null;
+  try{localStorage.removeItem('academy_refresh_token');}catch(e){}
+  _currentUser=null;isAdmin=false;_userRole='user';
+  document.getElementById('adminSettings').classList.remove('show');
+  document.getElementById('adminBadge').classList.remove('on');
+  document.getElementById('adminBadge').textContent='관리자';
+  document.getElementById('userRoleBadge').style.display='none';
+  document.getElementById('loginEmail').value='';
+  document.getElementById('loginPassword').value='';
+  document.getElementById('loginErr').style.display='none';
+  document.getElementById('loginScreen').style.display='flex';
+  updateFbStatus();filterStu();
+}
+
+/* ════════════════════════════════════════
+   회원 관리 (관리자 전용)
+════════════════════════════════════════ */
+async function renderUserManagement(el){
+  const users=DB.users||[];
+  el.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:600;color:var(--text1)">회원 목록 (${users.length}명)</div>
+      <button id="btnAddUser" style="padding:6px 12px;background:#0f172a;color:#38bdf8;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-weight:500">+ 회원 추가</button>
+    </div>
+    <div id="userList">
+      ${users.length===0?`<div style="text-align:center;padding:20px;font-size:12px;color:var(--text3)">등록된 회원이 없습니다</div>`:''}
+      ${users.map(u=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg1);border-radius:10px;border:0.5px solid var(--border1);margin-bottom:6px">
+          <div style="width:32px;height:32px;border-radius:50%;background:${u.role==='admin'?'#1e3a5f':'#1e293b'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">
+            ${u.role==='admin'?'👑':'👤'}
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500;color:var(--text1)">${u.name}</div>
+            <div style="font-size:11px;color:var(--text2)">${u.email} · <span style="color:${u.role==='admin'?'#38bdf8':'#94a3b8'}">${u.role==='admin'?'관리자':'일반 유저'}</span></div>
+          </div>
+          <button data-del-user="${u.id}" style="width:28px;height:28px;border-radius:50%;background:#FCEBEB;border:0.5px solid #F09595;color:#A32D2D;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
+        </div>`).join('')}
+    </div>
+
+    <!-- 회원 추가 폼 -->
+    <div id="addUserForm" style="display:none;background:var(--bg2);border-radius:10px;padding:14px;margin-top:10px;border:0.5px solid var(--border1)">
+      <div style="font-size:12px;font-weight:600;color:var(--text1);margin-bottom:10px">새 회원 추가</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:4px">이름</div>
+      <input id="newUserName" class="fi" type="text" placeholder="홍길동" style="margin-bottom:8px">
+      <div style="font-size:11px;color:var(--text2);margin-bottom:4px">이메일</div>
+      <input id="newUserEmail" class="fi" type="email" placeholder="example@email.com" style="margin-bottom:8px">
+      <div style="font-size:11px;color:var(--text2);margin-bottom:4px">비밀번호</div>
+      <input id="newUserPw" class="fi" type="password" placeholder="4자 이상" style="margin-bottom:8px">
+      <div style="font-size:11px;color:var(--text2);margin-bottom:4px">권한</div>
+      <select id="newUserRole" class="fsl" style="margin-bottom:10px">
+        <option value="user">일반 유저</option>
+        <option value="admin">관리자</option>
+      </select>
+      <div id="addUserErr" style="font-size:11px;color:#ef4444;margin-bottom:8px;display:none"></div>
+      <div style="display:flex;gap:8px">
+        <button id="cancelAddUser" style="flex:1;padding:9px;border-radius:8px;border:0.5px solid var(--border2);background:transparent;font-size:12px;color:var(--text2);cursor:pointer">취소</button>
+        <button id="confirmAddUser" style="flex:1;padding:9px;border-radius:8px;border:none;background:#0f172a;color:#38bdf8;font-size:12px;cursor:pointer;font-weight:500">추가</button>
+      </div>
+    </div>`;
+
+  document.getElementById('btnAddUser')?.addEventListener('click',()=>{
+    const f=document.getElementById('addUserForm');
+    f.style.display=f.style.display==='none'?'block':'none';
+  });
+  document.getElementById('cancelAddUser')?.addEventListener('click',()=>{
+    document.getElementById('addUserForm').style.display='none';
+  });
+  document.getElementById('confirmAddUser')?.addEventListener('click',async()=>{
+    const name=(document.getElementById('newUserName').value||'').trim();
+    const email=(document.getElementById('newUserEmail').value||'').trim();
+    const pw=document.getElementById('newUserPw').value||'';
+    const role=document.getElementById('newUserRole').value;
+    const errEl=document.getElementById('addUserErr');
+    if(!name||!email||pw.length<4){
+      errEl.style.display='block';
+      errEl.textContent='이름, 이메일, 비밀번호(4자+)를 모두 입력해주세요.';
+      return;
+    }
+    errEl.style.display='none';
+    // Firebase Auth에 유저 생성 시도
+    await _createUser(name,email,pw,role);
+    renderUserManagement(el);
+  });
+
+  // 삭제 이벤트
+  document.getElementById('userList')?.addEventListener('click',async e=>{
+    const btn=e.target.closest('[data-del-user]');if(!btn) return;
+    const uid=btn.dataset.delUser;
+    const u=users.find(u=>u.id===uid);if(!u) return;
+    const ok=await showConfirm('회원 삭제',`'${u.name}' 회원을 삭제하시겠습니까?`);
+    if(!ok) return;
+    DB.users=DB.users.filter(u=>u.id!==uid);
+    // Firebase Auth에서도 삭제 (가능한 경우)
+    await _deleteUser(uid);
+    saveDB();renderUserManagement(el);
+  });
+}
+
+async function _createUser(name,email,pw,role){
+  let uid='u'+Date.now().toString(36);
+  if(_fbEnabled){
+    try{
+      const data=await fbRestSignup(email,pw);
+      uid=data.localId;
+      // Firestore users 컬렉션에 역할 저장
+      await fbRestSet('users', uid, {name,email,role,createdAt:Date.now()});
+    }catch(e){
+      const errEl=document.getElementById('addUserErr');
+      if(errEl){errEl.style.display='block';errEl.textContent='오류: '+e.message;}
+      return;
+    }
+  }
+  if(!DB.users) DB.users=[];
+  DB.users.push({id:uid,name,email,pw,role});
+  saveDB();
+  document.getElementById('addUserForm').style.display='none';
+}
+
+async function _deleteUser(uid){
+  if(_fbEnabled){
+    try{
+      const cfg=getFirebaseCfg();
+      const url=`https://firestore.googleapis.com/v1/projects/${cfg.projectId}/databases/(default)/documents/users/${uid}`;
+      const headers={};
+      if(_idToken) headers['Authorization']=`Bearer ${_idToken}`;
+      await fetch(url,{method:'DELETE',headers});
+    }catch(e){console.warn('Firestore 유저 삭제:',e.message);}
+  }
+}
+
+/* ── 앱 초기화: 로그인 화면 표시 ── */
+(function initApp(){
+  const cfg=getFirebaseCfg();
+  if(!cfg?.apiKey){
+    console.log('Firebase 미설정: 오프라인 모드');
+  }
+  const nameEl=document.getElementById('loginAcademyName');
+  // localStorage에서 학원명 미리 표시
+  try{
+    const stored=localStorage.getItem(STORE);
+    if(stored){
+      const d=JSON.parse(stored);
+      if(d.cfg?.academyName&&nameEl) nameEl.textContent=d.cfg.academyName;
+    }
+  }catch(e){}
+})();
 setInterval(clockTick,1000);
 clockTick();
 
