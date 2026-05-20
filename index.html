@@ -1149,25 +1149,13 @@ function _parseFirestoreVal(v){
   return null;
 }
 
-/* ── initFirebase: REST 방식으로 초기화 ── */
+/* ── initFirebase: REST 방식 초기화 ── */
 async function initFirebase(){
   const cfg=getFirebaseCfg();
   if(!cfg||!cfg.apiKey){_fbEnabled=false;return false;}
-  try{
-    // 연결 테스트 — Firestore 접근 가능한지 확인
-    const testUrl=`https://firestore.googleapis.com/v1/projects/${cfg.projectId}/databases/(default)/documents`;
-    const res=await fetch(testUrl,{signal:AbortSignal.timeout(5000)});
-    if(res.status===200||res.status===401||res.status===403){
-      // 401/403은 인증 문제지만 Firestore 자체는 접근 가능
-      _fbEnabled=true;
-      return true;
-    }
-    throw new Error(`Firestore 접근 불가: ${res.status}`);
-  }catch(e){
-    console.warn('Firebase REST 초기화 실패:',e.message);
-    _fbEnabled=false;
-    return false;
-  }
+  // 연결 테스트 없이 바로 활성화 (테스트가 응답 없음 유발)
+  _fbEnabled=true;
+  return true;
 }
 
 async function _saveToFirebase(){
@@ -1188,7 +1176,10 @@ async function loadDB(){
   if(fbOk){
     try{
       const cfg=getFirebaseCfg();
-      const remote=await fbRestGet('academies', cfg.academyId||'main');
+      const remote=await Promise.race([
+        fbRestGet('academies', cfg.academyId||'main'),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),4000))
+      ]);
       if(remote){
         Object.assign(DB,remote);
         try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
@@ -1197,8 +1188,11 @@ async function loadDB(){
         await _saveToFirebase();
         setTimeout(()=>{_isSaving=false;},1500);
       }
-    }catch(err){console.warn('Firebase 초기 로드 실패:',err.message);}
-    startFirestorePolling();
+    }catch(err){
+      console.warn('Firebase 로드 실패, 로컬 사용:',err.message);
+      _fbEnabled=false;
+    }
+    if(_fbEnabled) startFirestorePolling();
   }
   if(!DB.classes?.length) DB.classes=JSON.parse(JSON.stringify(DEF_CLS));
   if(!DB.students?.length) DB.students=JSON.parse(JSON.stringify(BASE_STU));
@@ -1610,4 +1604,8 @@ document.getElementById('btnAllPresent').addEventListener('click',allPresent);
 document.getElementById('btnAllClear').addEventListener('click',allClear);
 document.getElementById('btnSaveAtt').addEventListener('click',saveAtt);
 document.getElementById('btnNtfyAtt').addEventListener('click',openNtfy);
-document.getElementById('attCls').addEventListener('cha
+document.getElementById('attCls').addEventListener('change',renderAtt);
+document.getElementById('attDate').addEventListener('change',renderAtt);
+document.getElementById('stuSearch').addEventListener('input',filterStu);
+document.getElementById('grpFilter').addEventListener('change',filterStu);
+document.getElementById('colorSel').addEventListener('click',e=>{const b=e.
