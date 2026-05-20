@@ -758,7 +758,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif;back
     <div class="fl">비밀번호</div>
     <input class="fi" id="adminPw" type="password" placeholder="비밀번호">
     <button id="loginBtn" style="width:100%;padding:11px;background:#0f172a;color:#e0f2fe;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:500">로그인</button>
-    <div style="font-size:12px;color:#A32D2D;margin-top:8px;display:none;text-align:center" id="loginErr">아이디 또는 비밀번호가 틀렸습니다</div>
+    <div style="font-size:12px;color:#A32D2D;margin-top:8px;display:none;text-align:center" id="adminLoginErr">아이디 또는 비밀번호가 틀렸습니다</div>
     <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:10px">초기 계정: admin / 1234</div>
   </div>
 </div>
@@ -1410,9 +1410,9 @@ document.getElementById('confirmCancel').addEventListener('click',()=>{document.
 
 /* ─── 관리자 ─── */
 function openAdminFlow(){isAdmin?openAdminSettings():openAdminAuth();}
-function openAdminAuth(cb){adminCb=cb||null;document.getElementById('adminId').value='';document.getElementById('adminPw').value='';document.getElementById('loginErr').style.display='none';document.getElementById('adminModal').classList.add('show');setTimeout(()=>document.getElementById('adminId').focus(),100);}
+function openAdminAuth(cb){adminCb=cb||null;document.getElementById('adminId').value='';document.getElementById('adminPw').value='';document.getElementById('adminLoginErr').style.display='none';document.getElementById('adminModal').classList.add('show');setTimeout(()=>document.getElementById('adminId').focus(),100);}
 function reqAdmin(cb){isAdmin?cb():openAdminAuth(cb);}
-function doLogin(){const id=document.getElementById('adminId').value.trim();const pw=document.getElementById('adminPw').value;if(id===DB.auth.id&&pw===DB.auth.pw){isAdmin=true;document.getElementById('adminModal').classList.remove('show');document.getElementById('adminBadge').classList.add('on');document.getElementById('adminBadge').textContent='관리자 ●';updateFbStatus();if(adminCb){adminCb();adminCb=null;}else openAdminSettings();}else{document.getElementById('loginErr').style.display='block';document.getElementById('adminPw').value='';}}
+function doLogin(){const id=document.getElementById('adminId').value.trim();const pw=document.getElementById('adminPw').value;if(id===DB.auth.id&&pw===DB.auth.pw){isAdmin=true;document.getElementById('adminModal').classList.remove('show');document.getElementById('adminBadge').classList.add('on');document.getElementById('adminBadge').textContent='관리자 ●';updateFbStatus();if(adminCb){adminCb();adminCb=null;}else openAdminSettings();}else{document.getElementById('adminLoginErr').style.display='block';document.getElementById('adminPw').value='';}}
 function doLogout(){isAdmin=false;document.getElementById('adminBadge').classList.remove('on');document.getElementById('adminBadge').textContent='관리자';document.getElementById('adminSettings').classList.remove('show');updateFbStatus();filterStu();}
 function openAdminSettings(){curAdminTab='general';document.querySelectorAll('#adminTabs .ti').forEach((b,i)=>b.classList.toggle('on',i===0));renderAdminTab();document.getElementById('adminSettings').classList.add('show');}
 function renderAdminTab(){const el=document.getElementById('adminTabContent');if(curAdminTab==='general') renderAdminGeneral(el);else if(curAdminTab==='classes') renderAdminClasses(el);else if(curAdminTab==='notify') renderAdminNotify(el);else if(curAdminTab==='users') renderUserManagement(el);else if(curAdminTab==='firebase') renderAdminFirebase(el);else renderAdminSecurity(el);}
@@ -1451,7 +1451,7 @@ function renderAdminNotify(el){
     renderAdminNotify(el); // 저장 후 새로고침
   });
 }
-function renderAdminSecurity(el){el.innerHTML=`<div style="background:var(--bg2);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:12px"><div style="font-size:13px;font-weight:500;color:var(--text1);margin-bottom:10px">비밀번호 변경</div><input class="fi" id="newPw" type="password" placeholder="새 비밀번호 (4자 이상)"><input class="fi" id="newPwC" type="password" placeholder="비밀번호 확인"><button id="changePwBtn" style="width:100%;padding:10px;background:#334155;color:#e0f2fe;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:500">변경</button><div id="pwMsg" style="font-size:12px;margin-top:7px;text-align:center;display:none"></div></div><button id="logoutBtn" style="width:100%;padding:10px;background:#FCEBEB;color:#A32D2D;border:0.5px solid #F09595;border-radius:8px;font-size:13px;cursor:pointer;font-weight:500">로그아웃</button>`;document.getElementById('changePwBtn').addEventListener('click',()=>{const np=document.getElementById('newPw').value;const nc=document.getElementById('newPwC').value;const msg=document.getElementById('pwMsg');msg.style.display='block';if(!np||np.length<4){msg.style.color='#A32D2D';msg.textContent='4자 이상 입력해주세요.';return;}if(np!==nc){msg.style.color='#A32D2D';msg.textContent='비밀번호가 일치하지 않습니다.';return;}DB.auth.pw=np;saveDB();msg.style.color='#3B6D11';msg.textContent='변경 완료!';document.getElementById('newPw').value='';document.getElementById('newPwC').value='';});document.getElementById('logoutBtn').addEventListener('click',doLogout);}
+function renderAdminSecurity(el){el.innerHTML=`<div style="background:var(--bg2);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:12px"><div style="font-size:13px;font-weight:500;color:var(--text1);margin-bottom:10px">비밀번호 변경</div><input class="fi" id="newPw" type="password" placeholder="새 비밀번호 (4자 이상)"><input class="fi" id="newPwC" type="password" placeholder="비밀번호 확인"><button id="changePwBtn" style="width:100%;padding:10px;background:#334155;color:#e0f2fe;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:500">변경</button><div id="pwMsg" style="font-size:12px;margin-top:7px;text-align:center;display:none"></div></div><button id="adminLogoutBtn" style="width:100%;padding:10px;background:#FCEBEB;color:#A32D2D;border:0.5px solid #F09595;border-radius:8px;font-size:13px;cursor:pointer;font-weight:500">로그아웃</button>`;document.getElementById('changePwBtn').addEventListener('click',()=>{const np=document.getElementById('newPw').value;const nc=document.getElementById('newPwC').value;const msg=document.getElementById('pwMsg');msg.style.display='block';if(!np||np.length<4){msg.style.color='#A32D2D';msg.textContent='4자 이상 입력해주세요.';return;}if(np!==nc){msg.style.color='#A32D2D';msg.textContent='비밀번호가 일치하지 않습니다.';return;}DB.auth.pw=np;saveDB();msg.style.color='#3B6D11';msg.textContent='변경 완료!';document.getElementById('newPw').value='';document.getElementById('newPwC').value='';});document.getElementById('adminLogoutBtn').addEventListener('click',doLogout);}
 
 /* ─── Firebase 설정 탭 ─── */
 function renderAdminFirebase(el){
@@ -1610,5 +1610,4 @@ document.getElementById('btnAllPresent').addEventListener('click',allPresent);
 document.getElementById('btnAllClear').addEventListener('click',allClear);
 document.getElementById('btnSaveAtt').addEventListener('click',saveAtt);
 document.getElementById('btnNtfyAtt').addEventListener('click',openNtfy);
-document.getElementById('attCls').addEventListener('change',renderAtt);
-document
+document.getElementById('attCls').addEventListener('cha
