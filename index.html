@@ -701,6 +701,42 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Noto Sans KR',sans-serif;back
       style="width:100%;padding:13px;background:#38bdf8;color:#0f172a;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .2s">
       로그인
     </button>
+
+    <script>
+// Firebase 로그인 함수
+async function doFirebaseLogin() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const errEl = document.getElementById('loginErr');
+    const loadingEl = document.getElementById('loginLoading');
+
+    errEl.style.display = 'none';
+    loadingEl.style.display = 'block';
+
+    if (!email || !password) {
+        errEl.textContent = '이메일과 비밀번호를 입력해주세요.';
+        errEl.style.display = 'block';
+        loadingEl.style.display = 'none';
+        return;
+    }
+
+    try {
+        // 여기서는 Firebase 대신 임시 관리자 로그인으로 우회 (테스트용)
+        if (email === 'admin@muacademy.com' && password === '1234') {
+            document.getElementById('loginScreen').style.display = 'none';
+            alert('관리자 로그인 성공! (테스트)');
+            // 실제로는 isAdmin = true; 등 처리
+        } else {
+            throw new Error('로그인 정보가 올바르지 않습니다.');
+        }
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+    } finally {
+        loadingEl.style.display = 'none';
+    }
+}
+    </script>
     <div style="text-align:center;margin-top:16px;font-size:12px;color:#475569">
       계정이 없으신가요? <span style="color:#38bdf8;cursor:pointer" onclick="showLoginMsg()">관리자에게 문의하세요</span>
     </div>
