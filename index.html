@@ -1104,15 +1104,20 @@ function startFirestorePolling(){
       const cfg=getFirebaseCfg();
       const remote=await fbRestGet('academies', cfg.academyId||'main');
       if(remote){
-        Object.assign(DB,remote);
-        try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
-        document.getElementById('acadHdr').textContent=DB.cfg?.academyName||'학원 관리 시스템';
-        syncAll();
-        if(curTab==='pickup') renderPickup();
-        setSI(true);
+        // 원격 데이터가 로컬보다 최신일 때만 반영
+        const remoteTs=remote._ts||0;
+        const localTs=DB._ts||0;
+        if(remoteTs>localTs){
+          Object.assign(DB,remote);
+          try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
+          document.getElementById('acadHdr').textContent=DB.cfg?.academyName||'학원 관리 시스템';
+          syncAll();
+          if(curTab==='pickup') renderPickup();
+          setSI(true);
+        }
       }
     }catch(e){}
-  }, 5000); // 5초마다 폴링
+  }, 5000);
 }
 
 /* Firestore 타입 변환 — JS 객체 → Firestore fields */
@@ -1217,24 +1222,24 @@ async function loadDB(){
 */
 function saveDB(userOnly=false){
   if(!isAdmin && !userOnly){
-    // 관리자 전용 데이터 저장 차단
     setSI(false,'readonly');
     return;
   }
-
   if(userOnly){
-    // 유저 저장: stuTimers + homeworks 완료 상태만
     _saveUserSession();
     return;
   }
-
-  // 관리자 전체 저장
+  // 타임스탬프 갱신 (폴링 충돌 방지)
+  DB._ts=Date.now();
+  // localStorage 즉시 저장
   try{localStorage.setItem(STORE,JSON.stringify(DB));setSI(true);}catch(e){setSI(false);}
+  // Firebase 저장
   if(_fbEnabled&&_fbDocRef){
     _isSaving=true;
     _saveToFirebase().then(ok=>{
       setSI(ok);
-      setTimeout(()=>{_isSaving=false;},1500);
+      // 8초간 폴링 차단 (Firebase 저장 완료 후 폴링이 구 데이터 덮어쓰는 것 방지)
+      setTimeout(()=>{_isSaving=false;},8000);
     });
   }
 }
