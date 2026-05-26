@@ -2368,6 +2368,23 @@ function renderStu(list){
         ${isAdmin?`<button class="del-stu-btn" data-stu-id="${s.id}" data-stu-name="${s.name}">✕</button>`:''}
       </div>
       <div class="stcard-edit">
+        <!-- 이름/연락처 수정 -->
+        <div class="edit-label">✏️ 기본 정보 수정</div>
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <div style="flex:1">
+            <div style="font-size:10px;color:var(--text3);margin-bottom:3px">이름</div>
+            <input type="text" value="${s.name}"
+              data-edit-name="${s.id}"
+              style="width:100%;padding:6px 9px;border-radius:6px;border:0.5px solid var(--border1);background:var(--bg1);color:var(--text1);font-size:12px;outline:none">
+          </div>
+          <div style="flex:1">
+            <div style="font-size:10px;color:var(--text3);margin-bottom:3px">연락처</div>
+            <input type="tel" value="${s.phone||''}"
+              data-edit-phone="${s.id}"
+              placeholder="010-0000-0000"
+              style="width:100%;padding:6px 9px;border-radius:6px;border:0.5px solid var(--border1);background:var(--bg1);color:var(--text1);font-size:12px;outline:none">
+          </div>
+        </div>
         <div class="edit-label">🏫 수강반 변경</div>
         <div class="cls-chip-wrap">
           <button class="cls-chip none-chip${!s.cls?' on':''}" data-assign-cls="" data-assign-stu="${s.id}">미배정</button>
@@ -2452,7 +2469,7 @@ function renderStu(list){
     if(clsChip){
       e.stopPropagation();
       const stuId=clsChip.dataset.assignStu;
-      const clsId=clsChip.dataset.assignCls; // 빈 문자열이면 미배정
+      const clsId=clsChip.dataset.assignCls;
       const stu=DB.students.find(s=>s.id===stuId);
       if(stu){stu.cls=clsId;saveDB();filterStu();}
       return;
@@ -2506,6 +2523,29 @@ function renderStu(list){
     inp.addEventListener('keydown', e=>{
       if(e.key==='Enter'){e.preventDefault();addHomework(inp.id.replace('hwInput_',''),inp.value);}
     });
+  });
+
+  // 이름 수정 (blur 시 저장)
+  el.querySelectorAll('[data-edit-name]').forEach(inp=>{
+    inp.addEventListener('blur',()=>{
+      const stuId=inp.dataset.editName;
+      const val=inp.value.trim();
+      if(!val) return;
+      const stu=DB.students.find(s=>s.id===stuId);
+      if(stu&&stu.name!==val){stu.name=val;saveDB();filterStu();}
+    });
+    inp.addEventListener('click',e=>e.stopPropagation());
+  });
+
+  // 연락처 수정 (blur 시 저장)
+  el.querySelectorAll('[data-edit-phone]').forEach(inp=>{
+    inp.addEventListener('blur',()=>{
+      const stuId=inp.dataset.editPhone;
+      const val=inp.value.trim();
+      const stu=DB.students.find(s=>s.id===stuId);
+      if(stu&&stu.phone!==val){stu.phone=val;saveDB();filterStu();}
+    });
+    inp.addEventListener('click',e=>e.stopPropagation());
   });
 }
 
