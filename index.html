@@ -1199,14 +1199,14 @@ async function loadDB(){
     }
     if(_fbEnabled) startFirestorePolling();
   }
-  if(!DB.classes?.length) DB.classes=JSON.parse(JSON.stringify(DEF_CLS));
-  if(!DB.students?.length) DB.students=JSON.parse(JSON.stringify(BASE_STU));
-  if(!DB.templates?.length) DB.templates=JSON.parse(JSON.stringify(DEFTPL));
-  if(!DB.logs) DB.logs=[];
-  if(!DB.pickups) DB.pickups=[];
-  if(!DB.homeworks) DB.homeworks={};
-  if(!DB.cfg) DB.cfg={kakao:false,sms:false,autoAbs:true,autoStart:false,academyName:'밝은미래학원'};
-  if(!DB.auth) DB.auth={id:'admin',pw:'1234'};
+  if(!Array.isArray(DB.classes)) DB.classes=JSON.parse(JSON.stringify(DEF_CLS));
+  if(!Array.isArray(DB.students)) DB.students=JSON.parse(JSON.stringify(BASE_STU));
+  if(!Array.isArray(DB.templates)) DB.templates=JSON.parse(JSON.stringify(DEFTPL));
+  if(!Array.isArray(DB.logs)) DB.logs=[];
+  if(!Array.isArray(DB.pickups)) DB.pickups=[];
+  if(!DB.homeworks||typeof DB.homeworks!=='object') DB.homeworks={};
+  if(!DB.cfg||typeof DB.cfg!=='object') DB.cfg={kakao:false,sms:false,autoAbs:true,autoStart:false,academyName:'밝은미래학원'};
+  if(!DB.auth||typeof DB.auth!=='object') DB.auth={id:'admin',pw:'1234'};
   if(!DB.mstats||!Object.keys(DB.mstats).length) genMstats();
   const td=todayKey(),tdd=DB.attendance[td]||{};
   DB.students.forEach(s=>{if((tdd[s.id]==='p'||tdd[s.id]==='l')&&!stuTimers[s.id]) stuTimers[s.id]={checkInTime:Date.now(),breakMins:0,onBreak:false,breakStart:null,breaks:[],breakTickets:0};});
@@ -1234,11 +1234,10 @@ function saveDB(userOnly=false){
   // localStorage 즉시 저장
   try{localStorage.setItem(STORE,JSON.stringify(DB));setSI(true);}catch(e){setSI(false);}
   // Firebase 저장
-  if(_fbEnabled&&_fbDocRef){
+  if(_fbEnabled){
     _isSaving=true;
     _saveToFirebase().then(ok=>{
       setSI(ok);
-      // 8초간 폴링 차단 (Firebase 저장 완료 후 폴링이 구 데이터 덮어쓰는 것 방지)
       setTimeout(()=>{_isSaving=false;},8000);
     });
   }
@@ -1619,32 +1618,6 @@ document.getElementById('cancelAddStu').addEventListener('click',()=>document.ge
 document.getElementById('confirmAddStu').addEventListener('click',saveStu);
 
 // 원생 삭제 (이벤트 위임)
-document.getElementById('stuList').addEventListener('click',async e=>{
-  // 막대 그래프 클릭 → 툴팁 토글 (요구사항 5)
-  const bar=e.target.closest('[data-hw-bar]');
-  if(bar){
-    e.stopPropagation();
-    bar.classList.toggle('show-tooltip');
-    setTimeout(()=>bar.classList.remove('show-tooltip'),3000);
-    return;
-  }
-
-  // 숙제 SMS 발송 버튼
-  const smsBn=e.target.closest('[data-hw-sms]');
-  if(smsBn){e.stopPropagation();_hwAutoSms(smsBn.dataset.hwSms);return;}
-
-  // 원생 삭제
-  const btn=e.target.closest('.del-stu-btn');if(!btn) return;
-  if(!isAdmin){openAdminAuth(()=>filterStu());return;}
-  const ok=await showConfirm('원생 삭제',`'${btn.dataset.stuName}' 원생을 삭제하시겠습니까?\n출석 기록도 함께 삭제됩니다.`);
-  if(!ok) return;
-  const id=btn.dataset.stuId;
-  DB.students=DB.students.filter(s=>s.id!==id);
-  Object.keys(DB.attendance).forEach(dk=>{if(DB.attendance[dk]) delete DB.attendance[dk][id];});
-  delete stuTimers[id];if(expandedStu===id) expandedStu=null;
-  saveDB();syncAll();
-});
-
 // 출석 이벤트 위임
 document.getElementById('attList').addEventListener('click',e=>{
   const cycleBtn=e.target.closest('[data-cycle-id]');if(cycleBtn){e.stopPropagation();cycleAtt(cycleBtn.dataset.cycleId);return;}
@@ -2367,21 +2340,17 @@ function renderStu(list){
         <span style="font-size:10px;color:var(--text3);margin-left:2px;flex-shrink:0">${isOpen?'▲':'▼'}</span>
         ${isAdmin?`<button class="del-stu-btn" data-stu-id="${s.id}" data-stu-name="${s.name}">✕</button>`:''}
       </div>
-      <div class="stcard-edit">
-        <!-- 이름/연락처 수정 -->
+      <div class="stcard-edit" data-edit-card="${s.id}" data-temp-cls="${s.cls||''}" data-temp-grade="${s.grade||''}">
         <div class="edit-label">✏️ 기본 정보 수정</div>
         <div style="display:flex;gap:6px;margin-bottom:10px">
           <div style="flex:1">
             <div style="font-size:10px;color:var(--text3);margin-bottom:3px">이름</div>
-            <input type="text" value="${s.name}"
-              data-edit-name="${s.id}"
+            <input type="text" value="${s.name}" data-edit-name="${s.id}"
               style="width:100%;padding:6px 9px;border-radius:6px;border:0.5px solid var(--border1);background:var(--bg1);color:var(--text1);font-size:12px;outline:none">
           </div>
           <div style="flex:1">
             <div style="font-size:10px;color:var(--text3);margin-bottom:3px">연락처</div>
-            <input type="tel" value="${s.phone||''}"
-              data-edit-phone="${s.id}"
-              placeholder="010-0000-0000"
+            <input type="tel" value="${s.phone||''}" data-edit-phone="${s.id}" placeholder="010-0000-0000"
               style="width:100%;padding:6px 9px;border-radius:6px;border:0.5px solid var(--border1);background:var(--bg1);color:var(--text1);font-size:12px;outline:none">
           </div>
         </div>
@@ -2392,7 +2361,10 @@ function renderStu(list){
         </div>
         <div class="edit-label">📚 학년 변경</div>
         <div class="grade-chip-wrap">${gradeChips}</div>
-        <div style="font-size:10px;color:var(--text3);text-align:right;margin-bottom:4px">변경 시 자동 저장됩니다</div>
+        <div style="display:flex;justify-content:flex-end;margin-top:10px">
+          <button class="bsv bsm" data-save-stu="${s.id}" style="padding:8px 16px;font-size:12px">💾 원생정보 저장</button>
+        </div>
+        <div style="font-size:10px;color:var(--text3);text-align:right;margin-top:4px">저장 버튼을 눌러야 반영됩니다</div>
 
         <!-- 숙제 섹션 -->
         <div class="hw-section">
@@ -2459,56 +2431,87 @@ function renderStu(list){
     </div>`;
   }).join('');
 
-  // 카드 클릭 이벤트 위임
-  el.addEventListener('click', e=>{
-    // 삭제 버튼 — stuList 상위에서 이미 처리
-    if(e.target.closest('.del-stu-btn')) return;
+  // 이벤트 중복 방지 — onclick으로 덮어쓰기
+  el.onclick=async(e)=>{
+    // 삭제 버튼
+    const delBtn=e.target.closest('.del-stu-btn');
+    if(delBtn){
+      if(!isAdmin){openAdminAuth(()=>filterStu());return;}
+      const ok=await showConfirm('원생 삭제',`'${delBtn.dataset.stuName}' 원생을 삭제하시겠습니까?\n출석 기록도 함께 삭제됩니다.`);
+      if(!ok) return;
+      const id=delBtn.dataset.stuId;
+      DB.students=DB.students.filter(s=>s.id!==id);
+      Object.keys(DB.attendance).forEach(dk=>{if(DB.attendance[dk]) delete DB.attendance[dk][id];});
+      delete stuTimers[id];if(expandedStu===id) expandedStu=null;
+      saveDB();syncAll();
+      return;
+    }
 
-    // 반 배정 칩
+    // 막대 그래프 클릭 툴팁
+    const bar=e.target.closest('[data-hw-bar]');
+    if(bar){e.stopPropagation();bar.classList.toggle('show-tooltip');setTimeout(()=>bar.classList.remove('show-tooltip'),3000);return;}
+
+    // 숙제 SMS
+    const smsBn=e.target.closest('[data-hw-sms]');
+    if(smsBn){e.stopPropagation();_hwAutoSms(smsBn.dataset.hwSms);return;}
+
+    // 숙제 추가
+    const hwAdd=e.target.closest('[data-hw-add]');
+    if(hwAdd){e.stopPropagation();const inp=document.getElementById('hwInput_'+hwAdd.dataset.hwAdd);if(inp) addHomework(hwAdd.dataset.hwAdd,inp.value);return;}
+
+    // 숙제 토글
+    const hwTog=e.target.closest('[data-hw-toggle]');
+    if(hwTog){e.stopPropagation();toggleHomework(hwTog.dataset.hwStu,hwTog.dataset.hwToggle);return;}
+
+    // 숙제 삭제
+    const hwDel=e.target.closest('[data-hw-del]');
+    if(hwDel){e.stopPropagation();deleteHomework(hwDel.dataset.hwStu,hwDel.dataset.hwDel);return;}
+
+    // 반 칩 — 임시 선택만 (저장 안함)
     const clsChip=e.target.closest('[data-assign-cls]');
     if(clsChip){
       e.stopPropagation();
-      const stuId=clsChip.dataset.assignStu;
-      const clsId=clsChip.dataset.assignCls;
-      const stu=DB.students.find(s=>s.id===stuId);
-      if(stu){stu.cls=clsId;saveDB();filterStu();}
+      const panel=clsChip.closest('.stcard-edit');
+      if(!panel) return;
+      panel.dataset.tempCls=clsChip.dataset.assignCls||'';
+      panel.querySelectorAll('[data-assign-cls]').forEach(ch=>ch.classList.toggle('on',ch===clsChip));
       return;
     }
 
-    // 학년 배정 칩
+    // 학년 칩 — 임시 선택만 (저장 안함)
     const gradeChip=e.target.closest('[data-assign-grade]');
     if(gradeChip){
       e.stopPropagation();
-      const stuId=gradeChip.dataset.assignStu;
-      const grade=gradeChip.dataset.assignGrade;
-      const stu=DB.students.find(s=>s.id===stuId);
-      if(stu){stu.grade=grade;saveDB();filterStu();}
+      const panel=gradeChip.closest('.stcard-edit');
+      if(!panel) return;
+      panel.dataset.tempGrade=gradeChip.dataset.assignGrade||'';
+      panel.querySelectorAll('[data-assign-grade]').forEach(ch=>ch.classList.toggle('on',ch===gradeChip));
       return;
     }
 
-    // 숙제 추가 버튼
-    const hwAdd=e.target.closest('[data-hw-add]');
-    if(hwAdd){
+    // 원생정보 저장 버튼
+    const saveBtn=e.target.closest('[data-save-stu]');
+    if(saveBtn){
       e.stopPropagation();
-      const stuId=hwAdd.dataset.hwAdd;
-      const inp=document.getElementById('hwInput_'+stuId);
-      if(inp) addHomework(stuId, inp.value);
+      const stuId=saveBtn.dataset.saveStu;
+      const stu=DB.students.find(s=>s.id===stuId);
+      const panel=saveBtn.closest('.stcard-edit');
+      if(!stu||!panel) return;
+      const nameInp=panel.querySelector(`[data-edit-name="${stuId}"]`);
+      const phoneInp=panel.querySelector(`[data-edit-phone="${stuId}"]`);
+      const newName=(nameInp?.value||'').trim();
+      if(!newName){alert('이름을 입력해주세요.');nameInp?.focus();return;}
+      stu.name=newName;
+      stu.phone=(phoneInp?.value||'').trim();
+      stu.cls=panel.dataset.tempCls??stu.cls;
+      stu.grade=panel.dataset.tempGrade??stu.grade;
+      saveDB();
+      const orig=saveBtn.textContent;
+      saveBtn.textContent='✅ 저장완료';saveBtn.disabled=true;
+      setTimeout(()=>{saveBtn.textContent=orig;saveBtn.disabled=false;filterStu();},800);
       return;
     }
-    // 숙제 완료 토글
-    const hwTog=e.target.closest('[data-hw-toggle]');
-    if(hwTog){
-      e.stopPropagation();
-      toggleHomework(hwTog.dataset.hwStu, hwTog.dataset.hwToggle);
-      return;
-    }
-    // 숙제 삭제
-    const hwDel=e.target.closest('[data-hw-del]');
-    if(hwDel){
-      e.stopPropagation();
-      deleteHomework(hwDel.dataset.hwStu, hwDel.dataset.hwDel);
-      return;
-    }
+
     // 카드 행 클릭 → 접기/펼치기
     const row=e.target.closest('[data-expand-stu]');
     if(row){
@@ -2516,38 +2519,18 @@ function renderStu(list){
       expandedStuCard=expandedStuCard===stuId?null:stuId;
       filterStu();
     }
-  },{once:false});
+  };
 
-  // 숙제 입력창 Enter 키
-  el.querySelectorAll('.hw-input').forEach(inp=>{
-    inp.addEventListener('keydown', e=>{
-      if(e.key==='Enter'){e.preventDefault();addHomework(inp.id.replace('hwInput_',''),inp.value);}
-    });
-  });
-
-  // 이름 수정 (blur 시 저장)
-  el.querySelectorAll('[data-edit-name]').forEach(inp=>{
-    inp.addEventListener('blur',()=>{
-      const stuId=inp.dataset.editName;
-      const val=inp.value.trim();
-      if(!val) return;
-      const stu=DB.students.find(s=>s.id===stuId);
-      if(stu&&stu.name!==val){stu.name=val;saveDB();filterStu();}
-    });
-    inp.addEventListener('click',e=>e.stopPropagation());
-  });
-
-  // 연락처 수정 (blur 시 저장)
-  el.querySelectorAll('[data-edit-phone]').forEach(inp=>{
-    inp.addEventListener('blur',()=>{
-      const stuId=inp.dataset.editPhone;
-      const val=inp.value.trim();
-      const stu=DB.students.find(s=>s.id===stuId);
-      if(stu&&stu.phone!==val){stu.phone=val;saveDB();filterStu();}
-    });
-    inp.addEventListener('click',e=>e.stopPropagation());
-  });
+  // 숙제 입력 Enter 키
+  el.onkeydown=(e)=>{
+    const inp=e.target.closest('.hw-input');
+    if(inp&&e.key==='Enter'){e.preventDefault();addHomework(inp.id.replace('hwInput_',''),inp.value);}
+  };
 }
+
+/* 이름·연락처 blur 자동저장 제거 (저장 버튼 방식으로 변경) */
+
+/* 이름·연락처 blur 자동저장 제거 (저장 버튼 방식으로 변경) */
 
 /* ─── 숙제 CRUD ─── */
 function addHomework(stuId, text){
@@ -2633,7 +2616,16 @@ function _hwAutoSms(stuId){
     wrap.appendChild(div);
     setTimeout(()=>div.remove(),7000);
   }
-}{const map={유치:'gbKid',초:'gbElem',중:'gbMid',고:'gbHigh'};GG.forEach(g=>{const el=document.getElementById(map[g.key]);if(!el) return;el.innerHTML=g.grades.map(grd=>`<button class="gb" data-grade="${grd}">${grd}</button>`).join('');});}
+}
+
+function buildGradeBtns(){
+  const map={유치:'gbKid',초:'gbElem',중:'gbMid',고:'gbHigh'};
+  GG.forEach(g=>{
+    const el=document.getElementById(map[g.key]);
+    if(!el) return;
+    el.innerHTML=g.grades.map(grd=>`<button class="gb" data-grade="${grd}">${grd}</button>`).join('');
+  });
+}
 
 /* ─── 알림 ─── */
 function openNtfy(){ntfyOpen=true;document.getElementById('ntfy-screen').classList.add('on');document.getElementById('mainNav').style.display='none';document.querySelectorAll('.screen').forEach(p=>p.classList.remove('on'));curNtfyTab='pending';document.querySelectorAll('#ntfyTabs .ti').forEach((b,i)=>b.classList.toggle('on',i===0));renderNtfy();}
@@ -3445,20 +3437,34 @@ async function _afterLogin(user){
 
 /* 앱 진입 */
 function _enterApp(){
-  // 로그인 화면 즉시 숨기기
   const loginEl=document.getElementById('loginScreen');
   if(loginEl) loginEl.style.display='none';
 
-  // 역할 뱃지 표시
   const role=isAdmin?'👑 관리자':'👤 '+(_currentUser?.displayName||_currentUser?.email?.split('@')[0]||'유저');
   const badge=document.getElementById('userRoleBadge');
   if(badge){badge.textContent=role;badge.style.display='inline';}
 
-  // 로딩 표시 후 DB 로드
-  const mainApp=document.querySelector('.app');
-  if(mainApp) mainApp.style.display='';
+  // localStorage 먼저 즉시 렌더 (빠른 첫 화면)
+  try{
+    const s=localStorage.getItem(STORE);
+    if(s){Object.assign(DB,JSON.parse(s));}
+  }catch(e){}
 
-  // DB는 백그라운드로 로드 (UI를 먼저 보여주고)
+  // 기본값 보정
+  if(!Array.isArray(DB.classes)) DB.classes=JSON.parse(JSON.stringify(DEF_CLS));
+  if(!Array.isArray(DB.students)) DB.students=JSON.parse(JSON.stringify(BASE_STU));
+  if(!Array.isArray(DB.templates)) DB.templates=JSON.parse(JSON.stringify(DEFTPL));
+  if(!Array.isArray(DB.logs)) DB.logs=[];
+  if(!Array.isArray(DB.pickups)) DB.pickups=[];
+  if(!DB.homeworks||typeof DB.homeworks!=='object') DB.homeworks={};
+  if(!DB.cfg||typeof DB.cfg!=='object') DB.cfg={kakao:false,sms:false,autoAbs:true,autoStart:false,academyName:'밝은미래학원'};
+  if(!DB.auth||typeof DB.auth!=='object') DB.auth={id:'admin',pw:'1234'};
+
+  buildGradeBtns();
+  syncAll();
+  updateFbStatus();
+
+  // Firebase에서 최신 데이터 백그라운드 로드
   loadDB().catch(e=>console.warn('DB 로드 오류:',e));
 }
 
@@ -3635,7 +3641,7 @@ try{
   };
   // 저장 시 다른 탭에 알림
   const _origSaveDB=saveDB;
-  window.saveDB=function(){_origSaveDB();try{bc.postMessage('reload');}catch(e){}};
+  saveDB=function(...args){_origSaveDB.apply(this,args);try{bc.postMessage('reload');}catch(e){}};
 }catch(e){}
 
 /* ── PWA 설치 배너 ── */
@@ -3648,6 +3654,16 @@ window.addEventListener('beforeinstallprompt',e=>{
   banner.innerHTML=`<span style="font-size:20px">📲</span><div style="flex:1"><div style="font-weight:600;margin-bottom:2px">홈 화면에 추가</div><div style="color:#94a3b8;font-size:11px">앱처럼 바로 실행할 수 있습니다</div></div><button onclick="_deferredInstall.prompt();document.getElementById('installBanner')?.remove()" style="padding:7px 13px;background:#38bdf8;color:#0f172a;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">설치</button><button onclick="this.closest('#installBanner').remove()" style="background:none;border:none;color:#64748b;font-size:16px;cursor:pointer;padding:0 2px">✕</button>`;
   document.body.appendChild(banner);
   setTimeout(()=>banner.remove(),15000);
+});
+
+/* ── 앱 종료 시 저장 ── */
+window.addEventListener('beforeunload',()=>{
+  try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
+  try{localStorage.setItem(STORE+'_session',JSON.stringify({
+    stuTimers:_serializeTimers(),
+    hwDone:_getHwDoneMap(),
+    savedAt:Date.now()
+  }));}catch(e){}
 });
 </script>
 </body>
