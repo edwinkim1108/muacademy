@@ -1254,6 +1254,9 @@ function saveDB(userOnly=false){
     return;
   }
   if(userOnly){
+    // 유저 저장: localStorage에는 전체 DB 저장 (재로그인 시 즉시 복원)
+    DB._ts=Date.now();
+    try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
     _saveUserSession();
     return;
   }
@@ -1300,21 +1303,26 @@ async function _getSessionDocRef(){
   };
 }
 
-async function _saveUserSession(){
-  // localStorage에 세션 저장 (항상)
+function _saveUserSession(){
+  // localStorage에 세션 저장 (항상, 동기)
   const sessionData={
     stuTimers: _serializeTimers(),
     hwDone: _getHwDoneMap(),
     savedAt: Date.now()
   };
-  try{localStorage.setItem(STORE+'_session',JSON.stringify(sessionData));}catch(e){}
+  let localOk=false;
+  try{localStorage.setItem(STORE+'_session',JSON.stringify(sessionData));localOk=true;}catch(e){}
+  setSI(localOk);
 
-  // Firebase에도 저장 (연결된 경우)
+  // Firebase에도 저장 (best-effort)
   if(_fbEnabled){
-    try{
-      const cfg=getFirebaseCfg();
-      await fbRestSet('sessions', cfg.academyId||'main', sessionData);
-    }catch(e){console.warn('세션 저장 실패:',e.message);}
+    const cfg=getFirebaseCfg();
+    fbRestSet('sessions', cfg.academyId||'main', sessionData)
+      .then(()=>setSI(true))
+      .catch(e=>{
+        console.warn('세션 Firebase 저장 실패(로컬에는 저장됨):',e.message);
+        setSI(localOk); // 로컬 저장 성공했으면 오류 아님
+      });
   }
 }
 
@@ -3663,6 +3671,17 @@ async function _deleteUser(uid){
 })();
 setInterval(clockTick,1000);
 clockTick();
+
+/* ── 10분마다 자동 저장 ── */
+setInterval(()=>{
+  if(!_currentUser) return; // 로그인 안 했으면 스킵
+  if(isAdmin){
+    saveDB(); // 관리자: 전체 DB 저장
+  }else{
+    saveDB(true); // 일반 유저: 세션(타이머/숙제) 저장
+  }
+  console.log('⏰ 자동 저장 실행:', new Date().toLocaleTimeString());
+}, 10*60*1000);
 
 /* ── 멀티탭/공유 실시간 동기화 (BroadcastChannel) ── */
 try{
