@@ -1077,6 +1077,13 @@ async function fbRestGet(collection, docId){
   if(_idToken) headers['Authorization']=`Bearer ${_idToken}`;
   const res=await fetch(url,{headers});
   if(res.status===404) return null;
+  if(res.status===401||res.status===403){
+    // 인증/권한 오류 — Firebase 비활성화하고 로컬 모드로 전환
+    console.warn('Firestore 권한 오류('+res.status+') — 로컬 모드로 전환');
+    _fbEnabled=false;
+    if(_pollInterval){clearInterval(_pollInterval);_pollInterval=null;}
+    throw new Error('PERMISSION_DENIED');
+  }
   if(!res.ok) throw new Error(`Firestore 읽기 오류: ${res.status}`);
   const data=await res.json();
   return _firestoreToObj(data.fields||{});
@@ -1090,6 +1097,12 @@ async function fbRestSet(collection, docId, obj){
   if(_idToken) headers['Authorization']=`Bearer ${_idToken}`;
   const body=JSON.stringify({fields:_objToFirestore(obj)});
   const res=await fetch(url,{method:'PATCH',headers,body});
+  if(res.status===401||res.status===403){
+    console.warn('Firestore 쓰기 권한 오류('+res.status+') — 로컬 모드로 전환');
+    _fbEnabled=false;
+    if(_pollInterval){clearInterval(_pollInterval);_pollInterval=null;}
+    throw new Error('PERMISSION_DENIED');
+  }
   if(!res.ok){const e=await res.text();throw new Error(`Firestore 쓰기 오류: ${res.status} ${e.slice(0,100)}`);}
   return true;
 }
@@ -1108,6 +1121,13 @@ function startFirestorePolling(){
         const remoteTs=remote._ts||0;
         const localTs=DB._ts||0;
         if(remoteTs>localTs){
+          // 원격 배열이 비어있고 로컬에 데이터가 있으면 로컬 보존
+          const keysToCheck=['classes','students','templates','pickups','logs','users'];
+          keysToCheck.forEach(k=>{
+            if(Array.isArray(remote[k])&&remote[k].length===0&&Array.isArray(DB[k])&&DB[k].length>0){
+              delete remote[k];
+            }
+          });
           Object.assign(DB,remote);
           try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
           document.getElementById('acadHdr').textContent=DB.cfg?.academyName||'학원 관리 시스템';
@@ -1186,6 +1206,13 @@ async function loadDB(){
         new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),4000))
       ]);
       if(remote){
+        // 원격 배열이 비어있고 로컬에 데이터가 있으면 로컬 데이터 보존
+        const keysToCheck=['classes','students','templates','pickups','logs'];
+        keysToCheck.forEach(k=>{
+          if(Array.isArray(remote[k])&&remote[k].length===0&&Array.isArray(DB[k])&&DB[k].length>0){
+            delete remote[k]; // 로컬 값 유지
+          }
+        });
         Object.assign(DB,remote);
         try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
       }else{
@@ -1204,6 +1231,7 @@ async function loadDB(){
   if(!Array.isArray(DB.templates)) DB.templates=JSON.parse(JSON.stringify(DEFTPL));
   if(!Array.isArray(DB.logs)) DB.logs=[];
   if(!Array.isArray(DB.pickups)) DB.pickups=[];
+  if(!Array.isArray(DB.users)) DB.users=[];
   if(!DB.homeworks||typeof DB.homeworks!=='object') DB.homeworks={};
   if(!DB.cfg||typeof DB.cfg!=='object') DB.cfg={kakao:false,sms:false,autoAbs:true,autoStart:false,academyName:'밝은미래학원'};
   if(!DB.auth||typeof DB.auth!=='object') DB.auth={id:'admin',pw:'1234'};
@@ -1232,12 +1260,14 @@ function saveDB(userOnly=false){
   // 타임스탬프 갱신 (폴링 충돌 방지)
   DB._ts=Date.now();
   // localStorage 즉시 저장
-  try{localStorage.setItem(STORE,JSON.stringify(DB));setSI(true);}catch(e){setSI(false);}
-  // Firebase 저장
+  let localOk=false;
+  try{localStorage.setItem(STORE,JSON.stringify(DB));localOk=true;setSI(true);}catch(e){setSI(false);}
+  // Firebase 저장 (best-effort, 실패해도 로컬 저장 결과 유지)
   if(_fbEnabled){
     _isSaving=true;
     _saveToFirebase().then(ok=>{
-      setSI(ok);
+      // Firebase 실패해도 로컬 저장이 성공했으면 '저장됨'으로 표시
+      setSI(ok||localOk);
       setTimeout(()=>{_isSaving=false;},8000);
     });
   }
@@ -3444,13 +3474,22 @@ function _enterApp(){
   const badge=document.getElementById('userRoleBadge');
   if(badge){badge.textContent=role;badge.style.display='inline';}
 
-  // localStorage 먼저 즉시 렌더 (빠른 첫 화면)
-  try{
-    const s=localStorage.getItem(STORE);
-    if(s){Object.assign(DB,JSON.parse(s));}
-  }catch(e){}
+  // 1) localStorage 즉시 렌더 (첫 화면 빠르게)
+  try{const s=localStorage.getItem(STORE);if(s) Object.assign(DB,JSON.parse(s));}catch(e){}
 
-  // 기본값 보정
+  _applyDefaults();
+  buildGradeBtns();
+  syncAll();
+  updateFbStatus();
+
+  // 2) Firebase에서 최신 데이터 로드 후 다시 렌더
+  loadDB().then(()=>{
+    syncAll();
+    if(curTab==='pickup') renderPickup();
+  }).catch(e=>console.warn('DB 로드 오류:',e));
+}
+
+function _applyDefaults(){
   if(!Array.isArray(DB.classes)) DB.classes=JSON.parse(JSON.stringify(DEF_CLS));
   if(!Array.isArray(DB.students)) DB.students=JSON.parse(JSON.stringify(BASE_STU));
   if(!Array.isArray(DB.templates)) DB.templates=JSON.parse(JSON.stringify(DEFTPL));
@@ -3459,13 +3498,7 @@ function _enterApp(){
   if(!DB.homeworks||typeof DB.homeworks!=='object') DB.homeworks={};
   if(!DB.cfg||typeof DB.cfg!=='object') DB.cfg={kakao:false,sms:false,autoAbs:true,autoStart:false,academyName:'밝은미래학원'};
   if(!DB.auth||typeof DB.auth!=='object') DB.auth={id:'admin',pw:'1234'};
-
-  buildGradeBtns();
-  syncAll();
-  updateFbStatus();
-
-  // Firebase에서 최신 데이터 백그라운드 로드
-  loadDB().catch(e=>console.warn('DB 로드 오류:',e));
+  if(!Array.isArray(DB.users)) DB.users=[];
 }
 
 /* Enter 키 로그인 */
@@ -3576,22 +3609,28 @@ async function renderUserManagement(el){
 
 async function _createUser(name,email,pw,role){
   let uid='u'+Date.now().toString(36);
+  // Firebase는 best-effort — 실패해도 로컬 저장은 진행
   if(_fbEnabled){
     try{
       const data=await fbRestSignup(email,pw);
       uid=data.localId;
-      // Firestore users 컬렉션에 역할 저장
       await fbRestSet('users', uid, {name,email,role,createdAt:Date.now()});
     }catch(e){
-      const errEl=document.getElementById('addUserErr');
-      if(errEl){errEl.style.display='block';errEl.textContent='오류: '+e.message;}
-      return;
+      console.warn('Firebase 회원가입 실패(로컬에는 저장됨):',e.message);
     }
   }
-  if(!DB.users) DB.users=[];
+  if(!Array.isArray(DB.users)) DB.users=[];
   DB.users.push({id:uid,name,email,pw,role});
   saveDB();
-  document.getElementById('addUserForm').style.display='none';
+  const formEl=document.getElementById('addUserForm');
+  if(formEl) formEl.style.display='none';
+  // 입력값 초기화
+  ['newUserName','newUserEmail','newUserPw'].forEach(id=>{
+    const e=document.getElementById(id);if(e) e.value='';
+  });
+  // 목록 즉시 갱신
+  const tabEl=document.getElementById('adminTabContent');
+  if(tabEl) renderUserManagement(tabEl);
 }
 
 async function _deleteUser(uid){
