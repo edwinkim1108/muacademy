@@ -1078,10 +1078,7 @@ async function fbRestGet(collection, docId){
   const res=await fetch(url,{headers});
   if(res.status===404) return null;
   if(res.status===401||res.status===403){
-    // 인증/권한 오류 — Firebase 비활성화하고 로컬 모드로 전환
-    console.warn('Firestore 권한 오류('+res.status+') — 로컬 모드로 전환');
-    _fbEnabled=false;
-    if(_pollInterval){clearInterval(_pollInterval);_pollInterval=null;}
+    // 권한 오류 — Firebase는 켜둔 채로 이 호출만 실패 처리
     throw new Error('PERMISSION_DENIED');
   }
   if(!res.ok) throw new Error(`Firestore 읽기 오류: ${res.status}`);
@@ -1098,9 +1095,7 @@ async function fbRestSet(collection, docId, obj){
   const body=JSON.stringify({fields:_objToFirestore(obj)});
   const res=await fetch(url,{method:'PATCH',headers,body});
   if(res.status===401||res.status===403){
-    console.warn('Firestore 쓰기 권한 오류('+res.status+') — 로컬 모드로 전환');
-    _fbEnabled=false;
-    if(_pollInterval){clearInterval(_pollInterval);_pollInterval=null;}
+    // 권한 오류 — Firebase는 켜둔 채로 이 호출만 실패 처리
     throw new Error('PERMISSION_DENIED');
   }
   if(!res.ok){const e=await res.text();throw new Error(`Firestore 쓰기 오류: ${res.status} ${e.slice(0,100)}`);}
@@ -1184,14 +1179,14 @@ async function initFirebase(){
 }
 
 async function _saveToFirebase(){
-  if(!_fbEnabled) return false;
+  if(!_fbEnabled) return {ok:false};
   try{
     const cfg=getFirebaseCfg();
     await fbRestSet('academies', cfg.academyId||'main', DB);
-    return true;
+    return {ok:true};
   }catch(e){
     console.warn('Firebase 저장 실패:',e.message);
-    return false;
+    return {ok:false, permission:e.message==='PERMISSION_DENIED'};
   }
 }
 
@@ -1268,9 +1263,15 @@ function saveDB(userOnly=false){
   // Firebase 저장 (best-effort, 실패해도 로컬 저장 결과 유지)
   if(_fbEnabled){
     _isSaving=true;
-    _saveToFirebase().then(ok=>{
-      // Firebase 실패해도 로컬 저장이 성공했으면 '저장됨'으로 표시
-      setSI(ok||localOk);
+    _saveToFirebase().then(result=>{
+      if(result.ok){
+        setSI(true);
+      }else if(result.permission&&localOk){
+        // Firestore 권한 없음 — 로컬 저장은 성공
+        setSI(true,'permission');
+      }else{
+        setSI(localOk);
+      }
       setTimeout(()=>{_isSaving=false;},8000);
     });
   }
@@ -1320,8 +1321,11 @@ function _saveUserSession(){
     fbRestSet('sessions', cfg.academyId||'main', sessionData)
       .then(()=>setSI(true))
       .catch(e=>{
-        console.warn('세션 Firebase 저장 실패(로컬에는 저장됨):',e.message);
-        setSI(localOk); // 로컬 저장 성공했으면 오류 아님
+        if(e.message==='PERMISSION_DENIED'&&localOk){
+          setSI(true,'permission');
+        }else{
+          setSI(localOk);
+        }
       });
   }
 }
@@ -1415,6 +1419,13 @@ function setSI(ok, mode){
     e.className='si';
     e.style.background='#334155';e.style.color='#94a3b8';
     e.textContent='👁 읽기 전용';
+    return;
+  }
+  if(mode==='permission'){
+    // Firebase 켜져있지만 쓰기 권한 없음 — 로컬 저장은 정상
+    e.className='si';
+    e.style.background='#7c2d12';e.style.color='#fed7aa';
+    e.textContent='💾 로컬 (동기화 권한없음)';
     return;
   }
   e.style.background='';e.style.color='';
