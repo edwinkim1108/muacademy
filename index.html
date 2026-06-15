@@ -1102,37 +1102,51 @@ async function fbRestSet(collection, docId, obj){
   return true;
 }
 
-/* Firestore Long Polling (실시간 대신 주기적 폴링) */
+/* Firestore 동기화 — 이벤트 기반 (visibilitychange/focus) + 60초 안전망 */
 let _pollInterval=null;
+
+/* 즉시 1회 동기화 시도 */
+async function syncFromFirebaseOnce(){
+  if(_isSaving||!_fbEnabled) return;
+  try{
+    const cfg=getFirebaseCfg();
+    const remote=await fbRestGet('academies', cfg.academyId||'main');
+    if(remote){
+      // 원격 데이터가 로컬보다 최신일 때만 반영
+      const remoteTs=remote._ts||0;
+      const localTs=DB._ts||0;
+      if(remoteTs>localTs){
+        // 원격 배열이 비어있고 로컬에 데이터가 있으면 로컬 보존
+        const keysToCheck=['classes','students','templates','pickups','logs','users'];
+        keysToCheck.forEach(k=>{
+          if(Array.isArray(remote[k])&&remote[k].length===0&&Array.isArray(DB[k])&&DB[k].length>0){
+            delete remote[k];
+          }
+        });
+        Object.assign(DB,remote);
+        try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
+        document.getElementById('acadHdr').textContent=DB.cfg?.academyName||'학원 관리 시스템';
+        syncAll();
+        if(curTab==='pickup') renderPickup();
+        setSI(true);
+      }
+    }
+  }catch(e){}
+}
+
+/* 동기화 시작 — 이벤트 기반 + 60초 안전망 폴링 */
 function startFirestorePolling(){
   if(_pollInterval) clearInterval(_pollInterval);
-  _pollInterval=setInterval(async()=>{
-    if(_isSaving||!_fbEnabled) return;
-    try{
-      const cfg=getFirebaseCfg();
-      const remote=await fbRestGet('academies', cfg.academyId||'main');
-      if(remote){
-        // 원격 데이터가 로컬보다 최신일 때만 반영
-        const remoteTs=remote._ts||0;
-        const localTs=DB._ts||0;
-        if(remoteTs>localTs){
-          // 원격 배열이 비어있고 로컬에 데이터가 있으면 로컬 보존
-          const keysToCheck=['classes','students','templates','pickups','logs','users'];
-          keysToCheck.forEach(k=>{
-            if(Array.isArray(remote[k])&&remote[k].length===0&&Array.isArray(DB[k])&&DB[k].length>0){
-              delete remote[k];
-            }
-          });
-          Object.assign(DB,remote);
-          try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
-          document.getElementById('acadHdr').textContent=DB.cfg?.academyName||'학원 관리 시스템';
-          syncAll();
-          if(curTab==='pickup') renderPickup();
-          setSI(true);
-        }
-      }
-    }catch(e){}
-  }, 5000);
+
+  // 화면 복귀 시 즉시 동기화 (탭 전환, 앱 백그라운드→포그라운드)
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible') syncFromFirebaseOnce();
+  });
+  // 창 포커스 복귀 시 즉시 동기화
+  window.addEventListener('focus',syncFromFirebaseOnce);
+
+  // 60초마다 안전망 동기화 (이벤트를 놓친 경우 대비)
+  _pollInterval=setInterval(syncFromFirebaseOnce, 60000);
 }
 
 /* Firestore 타입 변환 — JS 객체 → Firestore fields */
@@ -1398,7 +1412,7 @@ async function loadSession(){
 /* 세션 실시간 리스너 (다른 기기 타이머 동기화) */
 async function initSessionListener(){
   if(!_fbEnabled) return;
-  setInterval(async()=>{
+  const syncSession=async()=>{
     try{
       const cfg=getFirebaseCfg();
       const remote=await fbRestGet('sessions', cfg.academyId||'main');
@@ -1410,7 +1424,14 @@ async function initSessionListener(){
         }
       });
     }catch(e){}
-  },8000);
+  };
+  // 화면 복귀 시 즉시 동기화
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible') syncSession();
+  });
+  window.addEventListener('focus',syncSession);
+  // 30초 안전망 — 출석 중인 원생 타이머는 실시간성이 중요
+  setInterval(syncSession,30000);
 }
 
 function setSI(ok, mode){
@@ -3628,14 +3649,28 @@ async function renderUserManagement(el){
 
 async function _createUser(name,email,pw,role){
   let uid='u'+Date.now().toString(36);
-  // Firebase는 best-effort — 실패해도 로컬 저장은 진행
+  let errMsg='';
   if(_fbEnabled){
     try{
       const data=await fbRestSignup(email,pw);
       uid=data.localId;
-      await fbRestSet('users', uid, {name,email,role,createdAt:Date.now()});
+      // 새로 생성된 유저 본인의 idToken으로 users/{uid} 문서 작성
+      // (관리자의 토큰이 없거나 만료된 경우에도 본인 토큰으로는 본인 문서 작성 가능)
+      const prevToken=_idToken;
+      _idToken=data.idToken;
+      try{
+        await fbRestSet('users', uid, {name,email,role,createdAt:Date.now()});
+      }catch(e2){
+        console.warn('users 문서 생성 실패:',e2.message);
+        errMsg='Firestore에 권한 정보 저장 실패 — 로컬에는 저장됨';
+      }finally{
+        _idToken=prevToken; // 관리자 토큰 복원
+      }
     }catch(e){
       console.warn('Firebase 회원가입 실패(로컬에는 저장됨):',e.message);
+      if(e.message&&e.message.includes('EMAIL_EXISTS')){
+        errMsg='이미 등록된 이메일입니다 (Firebase). 로컬 계정으로만 추가됩니다.';
+      }
     }
   }
   if(!Array.isArray(DB.users)) DB.users=[];
@@ -3643,13 +3678,15 @@ async function _createUser(name,email,pw,role){
   saveDB();
   const formEl=document.getElementById('addUserForm');
   if(formEl) formEl.style.display='none';
-  // 입력값 초기화
   ['newUserName','newUserEmail','newUserPw'].forEach(id=>{
     const e=document.getElementById(id);if(e) e.value='';
   });
-  // 목록 즉시 갱신
   const tabEl=document.getElementById('adminTabContent');
   if(tabEl) renderUserManagement(tabEl);
+  if(errMsg){
+    const errEl=document.getElementById('addUserErr');
+    if(errEl){errEl.style.display='block';errEl.textContent=errMsg;}
+  }
 }
 
 async function _deleteUser(uid){
