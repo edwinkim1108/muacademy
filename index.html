@@ -1197,9 +1197,10 @@ async function _saveToFirebase(){
   try{
     const cfg=getFirebaseCfg();
     await fbRestSet('academies', cfg.academyId||'main', DB);
+    console.log('✅ Firebase 저장 성공 _ts='+DB._ts);
     return {ok:true};
   }catch(e){
-    console.warn('Firebase 저장 실패:',e.message);
+    console.warn('❌ Firebase 저장 실패:',e.message);
     return {ok:false, permission:e.message==='PERMISSION_DENIED'};
   }
 }
@@ -1215,16 +1216,19 @@ async function loadDB(){
         new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),4000))
       ]);
       if(remote){
+        console.log('✅ Firebase 로드 성공 remote._ts='+remote._ts+' local._ts='+DB._ts);
         // 원격 배열이 비어있고 로컬에 데이터가 있으면 로컬 데이터 보존
         const keysToCheck=['classes','students','templates','pickups','logs'];
         keysToCheck.forEach(k=>{
           if(Array.isArray(remote[k])&&remote[k].length===0&&Array.isArray(DB[k])&&DB[k].length>0){
-            delete remote[k]; // 로컬 값 유지
+            console.warn('⚠️ 원격'+k+'가 비어있어 로컬 보존');
+            delete remote[k];
           }
         });
         Object.assign(DB,remote);
         try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
       }else{
+        console.log('ℹ️ Firebase academies/main 문서 없음 → 로컬 데이터 업로드');
         _isSaving=true;
         await _saveToFirebase();
         setTimeout(()=>{_isSaving=false;},1500);
@@ -3487,20 +3491,54 @@ function _offlineLogin(email,pw,errEl,loadEl,btn){
 
 /* 로그인 후 처리 */
 async function _afterLogin(user){
-  // Firebase Auth로 로그인한 경우만 역할 조회
-  // 오프라인 로그인은 이미 isAdmin이 설정되어 있으므로 건드리지 않음
   try{
     if(_fbEnabled && user.uid && !user.uid.startsWith('local_')){
-      const userData=await fbRestGet('users', user.uid);
-      if(userData){
-        _userRole=userData.role||'user';
+      // 1순위: Firestore users/{uid} 문서에서 역할 조회
+      let userData=null;
+      try{userData=await fbRestGet('users', user.uid);}catch(e){}
+
+      if(userData&&userData.role){
+        _userRole=userData.role;
         isAdmin=_userRole==='admin';
+      }else{
+        // 2순위: DB.users에서 이메일로 찾기 (앱 내 회원관리에서 등록된 경우)
+        const found=(DB.users||[]).find(u=>u.email===user.email);
+        if(found){
+          _userRole=found.role||'user';
+          isAdmin=_userRole==='admin';
+        }else{
+          // 3순위: Firestore users 컬렉션에 문서 없음
+          // → 이 계정을 관리자로 등록하고 Firestore에도 기록
+          console.warn('users/'+user.uid+' 문서 없음 → 관리자로 등록');
+          _userRole='admin';
+          isAdmin=true;
+          // Firestore에 관리자 문서 생성 (이후 로그인부터 1순위로 처리됨)
+          try{
+            await fbRestSet('users', user.uid, {
+              name: user.displayName||user.email.split('@')[0],
+              email: user.email,
+              role: 'admin',
+              createdAt: Date.now()
+            });
+          }catch(e){console.warn('users 문서 자동 생성 실패:',e.message);}
+          // DB.users에도 추가
+          if(!Array.isArray(DB.users)) DB.users=[];
+          if(!DB.users.find(u=>u.email===user.email)){
+            DB.users.push({
+              id:user.uid,
+              name:user.displayName||user.email.split('@')[0],
+              email:user.email,
+              role:'admin'
+            });
+            saveDB();
+          }
+        }
       }
-      // Firestore에 없으면 기본 user로 — isAdmin은 건드리지 않음
     }
   }catch(e){
-    // 오류 시 현재 isAdmin 상태 유지
     console.warn('_afterLogin 오류:', e.message);
+    // 오류 시 안전하게 관리자로 처리 (첫 로그인 등)
+    if(!isAdmin){_userRole='admin';isAdmin=true;}
   }
   _enterApp();
 }
