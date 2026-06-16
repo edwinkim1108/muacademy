@@ -1119,13 +1119,24 @@ async function fbRestSet(collection, docId, obj){
   const url=`https://firestore.googleapis.com/v1/projects/${cfg.projectId}/databases/(default)/documents/${collection}/${docId}`;
   const headers={'Content-Type':'application/json'};
   if(_idToken) headers['Authorization']=`Bearer ${_idToken}`;
-  const body=JSON.stringify({fields:_objToFirestore(obj)});
+  // Firestore REST API 형식: {fields: {key: {valueType: value}, ...}}
+  // _objToFirestore(obj)는 {mapValue:{fields:{...}}}를 반환하므로
+  // 최상위 객체는 fields를 직접 추출해야 함
+  const firestoreFields={};
+  if(obj&&typeof obj==='object'&&!Array.isArray(obj)){
+    Object.keys(obj).forEach(k=>{
+      if(obj[k]!==undefined) firestoreFields[k]=_objToFirestore(obj[k]);
+    });
+  }
+  const body=JSON.stringify({fields:firestoreFields});
   const res=await fetch(url,{method:'PATCH',headers,body});
   if(res.status===401||res.status===403){
-    // 권한 오류 — Firebase는 켜둔 채로 이 호출만 실패 처리
     throw new Error('PERMISSION_DENIED');
   }
-  if(!res.ok){const e=await res.text();throw new Error(`Firestore 쓰기 오류: ${res.status} ${e.slice(0,100)}`);}
+  if(!res.ok){
+    const e=await res.text();
+    throw new Error(`Firestore 쓰기 오류: ${res.status} ${e.slice(0,200)}`);
+  }
   return true;
 }
 
@@ -1222,6 +1233,10 @@ async function initFirebase(){
 
 async function _saveToFirebase(){
   if(!_fbEnabled) return {ok:false};
+  if(!_idToken){
+    console.log('ℹ️ idToken 없음 — Firebase 저장 건너뜀');
+    return {ok:false};
+  }
   try{
     const cfg=getFirebaseCfg();
     await fbRestSet('academies', cfg.academyId||'main', DB);
@@ -1239,31 +1254,34 @@ async function loadDB(){
   if(fbOk){
     try{
       const cfg=getFirebaseCfg();
-      const remote=await Promise.race([
-        fbRestGet('academies', cfg.academyId||'main'),
-        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),4000))
-      ]);
-      if(remote){
-        console.log('✅ Firebase 로드 성공 remote._ts='+remote._ts+' local._ts='+DB._ts);
-        // 원격 배열이 비어있고 로컬에 데이터가 있으면 로컬 데이터 보존
-        const keysToCheck=['classes','students','templates','pickups','logs'];
-        keysToCheck.forEach(k=>{
-          if(Array.isArray(remote[k])&&remote[k].length===0&&Array.isArray(DB[k])&&DB[k].length>0){
-            console.warn('⚠️ 원격'+k+'가 비어있어 로컬 보존');
-            delete remote[k];
-          }
-        });
-        Object.assign(DB,remote);
-        try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
+      // _idToken 없으면 Firebase 읽기 건너뜀 (PERMISSION_DENIED 방지)
+      if(!_idToken){
+        console.log('ℹ️ idToken 없음 — Firebase 읽기 건너뜀 (로컬 사용)');
       }else{
-        console.log('ℹ️ Firebase academies/main 문서 없음 → 로컬 데이터 업로드');
-        _isSaving=true;
-        await _saveToFirebase();
-        setTimeout(()=>{_isSaving=false;},1500);
+        const remote=await Promise.race([
+          fbRestGet('academies', cfg.academyId||'main'),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),4000))
+        ]);
+        if(remote){
+          console.log('✅ Firebase 로드 성공 remote._ts='+remote._ts+' local._ts='+DB._ts);
+          const keysToCheck=['classes','students','templates','pickups','logs'];
+          keysToCheck.forEach(k=>{
+            if(Array.isArray(remote[k])&&remote[k].length===0&&Array.isArray(DB[k])&&DB[k].length>0){
+              console.warn('⚠️ 원격'+k+'가 비어있어 로컬 보존');
+              delete remote[k];
+            }
+          });
+          Object.assign(DB,remote);
+          try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
+        }else{
+          console.log('ℹ️ Firebase academies/main 문서 없음 → 로컬 데이터 업로드');
+          _isSaving=true;
+          await _saveToFirebase();
+          setTimeout(()=>{_isSaving=false;},1500);
+        }
       }
     }catch(err){
       console.warn('Firebase 로드 실패, 로컬 사용:',err.message);
-      _fbEnabled=false;
     }
     if(_fbEnabled) startFirestorePolling();
   }
@@ -3763,32 +3781,50 @@ async function renderUserManagement(el){
 async function _createUser(name,email,pw,role){
   let uid='u'+Date.now().toString(36);
   let errMsg='';
-  if(_fbEnabled){
+  if(_fbEnabled&&_idToken){
     try{
-      const data=await fbRestSignup(email,pw);
-      uid=data.localId;
-      // 새로 생성된 유저 본인의 idToken으로 users/{uid} 문서 작성
-      // (관리자의 토큰이 없거나 만료된 경우에도 본인 토큰으로는 본인 문서 작성 가능)
-      const prevToken=_idToken;
-      _idToken=data.idToken;
+      let signupData=null;
       try{
-        await fbRestSet('users', uid, {name,email,role,createdAt:Date.now()});
-      }catch(e2){
-        console.warn('users 문서 생성 실패:',e2.message);
-        errMsg='Firestore에 권한 정보 저장 실패 — 로컬에는 저장됨';
-      }finally{
-        _idToken=prevToken; // 관리자 토큰 복원
+        signupData=await fbRestSignup(email,pw);
+      }catch(e){
+        if(e.message&&e.message.includes('EMAIL_EXISTS')){
+          // 이미 Firebase Auth에 있는 계정 — 로그인으로 uid 획득
+          console.warn('EMAIL_EXISTS — 기존 계정 uid 획득 시도');
+          try{
+            const loginData=await fbRestLogin(email,pw);
+            signupData=loginData;
+          }catch(e2){
+            console.warn('기존 계정 로그인 실패:',e2.message);
+            errMsg='이미 Firebase에 등록된 이메일입니다. 비밀번호를 확인하세요.';
+          }
+        }else{
+          console.warn('Firebase 회원가입 실패:',e.message);
+        }
+      }
+      if(signupData){
+        uid=signupData.localId;
+        const prevToken=_idToken;
+        _idToken=signupData.idToken||_idToken;
+        try{
+          await fbRestSet('users', uid, {name,email,role,createdAt:Date.now()});
+          console.log('✅ users/'+uid+' 문서 생성 성공 role='+role);
+        }catch(e2){
+          console.warn('users 문서 생성 실패:',e2.message);
+          errMsg='권한 정보 저장 실패 — 로컬에는 저장됩니다.';
+        }finally{
+          _idToken=prevToken;
+        }
       }
     }catch(e){
-      console.warn('Firebase 회원가입 실패(로컬에는 저장됨):',e.message);
-      if(e.message&&e.message.includes('EMAIL_EXISTS')){
-        errMsg='이미 등록된 이메일입니다 (Firebase). 로컬 계정으로만 추가됩니다.';
-      }
+      console.warn('_createUser 오류:',e.message);
     }
   }
   if(!Array.isArray(DB.users)) DB.users=[];
-  DB.users.push({id:uid,name,email,pw,role});
-  saveDB();
+  // 중복 방지
+  if(!DB.users.find(u=>u.email===email)){
+    DB.users.push({id:uid,name,email,pw,role});
+    saveDB();
+  }
   const formEl=document.getElementById('addUserForm');
   if(formEl) formEl.style.display='none';
   ['newUserName','newUserEmail','newUserPw'].forEach(id=>{
