@@ -3607,51 +3607,66 @@ function _offlineLogin(email,pw,errEl,loadEl,btn){
 async function _afterLogin(user){
   try{
     if(_fbEnabled && user.uid && !user.uid.startsWith('local_')){
-      // 1순위: Firestore users/{uid} 문서에서 역할 조회
+
+      // ⭐ 핵심 수정: 역할 판정 전에 Firebase에서 최신 DB.users를 먼저 가져온다
+      // (이전에는 _enterApp()→loadDB() 가 나중에 실행되어 DB.users가 비어있는 상태로 판정했음)
+      try{
+        const cfg=getFirebaseCfg();
+        const remoteAcademy=await fbRestGet('academies', cfg.academyId||'main');
+        if(remoteAcademy&&Array.isArray(remoteAcademy.users)){
+          DB.users=remoteAcademy.users;
+          console.log('✅ 역할판정 전 DB.users 동기화 완료:',DB.users.length,'명');
+        }
+      }catch(e){
+        console.warn('역할판정 전 DB.users 동기화 실패:',e.message);
+      }
+
+      // 1순위: Firestore users/{uid} 단일 문서에서 역할 조회
       let userData=null;
       try{userData=await fbRestGet('users', user.uid);}catch(e){}
+
+      // 2순위: DB.users 배열에서 이메일로 찾기 (회원관리 화면에 보이는 목록)
+      const foundByEmail=(DB.users||[]).find(u=>u.email===user.email);
 
       if(userData&&userData.role){
         _userRole=userData.role;
         isAdmin=_userRole==='admin';
+        console.log('✅ 역할 판정(1순위 users컬렉션):',_userRole);
+      }else if(foundByEmail&&foundByEmail.role){
+        _userRole=foundByEmail.role;
+        isAdmin=_userRole==='admin';
+        console.log('✅ 역할 판정(2순위 DB.users):',_userRole,'/ uid:',user.uid,'/ DB.users.id:',foundByEmail.id);
+        // users/{uid} 컬렉션에도 동기화 (다음 로그인부터 1순위로 빠르게 처리)
+        try{
+          await fbRestSet('users', user.uid, {
+            name: foundByEmail.name||user.email.split('@')[0],
+            email: user.email,
+            role: foundByEmail.role,
+            createdAt: Date.now()
+          });
+        }catch(e){console.warn('users 컬렉션 동기화 실패:',e.message);}
       }else{
-        // 2순위: DB.users에서 이메일로 찾기 (앱 내 회원관리에서 등록된 경우)
-        const found=(DB.users||[]).find(u=>u.email===user.email);
-        if(found){
-          _userRole=found.role||'user';
-          isAdmin=_userRole==='admin';
-        }else{
-          // 3순위: Firestore users 컬렉션에 문서 없음
-          // → 이 계정을 관리자로 등록하고 Firestore에도 기록
-          console.warn('users/'+user.uid+' 문서 없음 → 관리자로 등록');
-          _userRole='admin';
-          isAdmin=true;
-          // Firestore에 관리자 문서 생성 (이후 로그인부터 1순위로 처리됨)
-          try{
-            await fbRestSet('users', user.uid, {
-              name: user.displayName||user.email.split('@')[0],
-              email: user.email,
-              role: 'admin',
-              createdAt: Date.now()
-            });
-          }catch(e){console.warn('users 문서 자동 생성 실패:',e.message);}
-          // DB.users에도 추가
-          if(!Array.isArray(DB.users)) DB.users=[];
-          if(!DB.users.find(u=>u.email===user.email)){
-            DB.users.push({
-              id:user.uid,
-              name:user.displayName||user.email.split('@')[0],
-              email:user.email,
-              role:'admin'
-            });
-            saveDB();
-          }
+        // 3순위: 어디에도 없음 → 관리자로 자동 등록
+        console.warn('⚠️ '+user.email+' 역할 정보 없음 → 관리자로 자동 등록');
+        _userRole='admin';
+        isAdmin=true;
+        try{
+          await fbRestSet('users', user.uid, {
+            name: user.displayName||user.email.split('@')[0],
+            email: user.email,
+            role: 'admin',
+            createdAt: Date.now()
+          });
+        }catch(e){console.warn('users 문서 자동 생성 실패:',e.message);}
+        if(!Array.isArray(DB.users)) DB.users=[];
+        if(!DB.users.find(u=>u.email===user.email)){
+          DB.users.push({id:user.uid,name:user.displayName||user.email.split('@')[0],email:user.email,role:'admin'});
+          saveDB();
         }
       }
     }
   }catch(e){
     console.warn('_afterLogin 오류:', e.message);
-    // 오류 시 안전하게 관리자로 처리 (첫 로그인 등)
     if(!isAdmin){_userRole='admin';isAdmin=true;}
   }
   _enterApp();
