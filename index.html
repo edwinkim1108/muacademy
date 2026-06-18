@@ -3486,35 +3486,22 @@ async function doFirebaseLogin(){
         _idToken=data.idToken;
         _currentUser={email:data.email,uid:data.localId,displayName:data.displayName||email.split('@')[0]};
         try{localStorage.setItem('academy_refresh_token',data.refreshToken);}catch(e){}
+        console.log('✅ Firebase Auth 로그인 성공 uid='+data.localId+' email='+data.email);
         done();
         await _afterLogin(_currentUser);
         return;
       }
       const code=(data&&data.error&&data.error.message)||'';
+      console.warn('❌ Firebase Auth 로그인 실패:',code);
       if(code.includes('INVALID')||code.includes('WRONG')||code.includes('EMAIL_NOT_FOUND')||code.includes('PASSWORD')){
-        // Firebase 로그인 실패 → DB.users에서 오프라인 확인 (3순위)
-        const found=(DB.users||[]).find(u=>u.email===email&&u.pw===pw);
-        if(found){
-          _currentUser={email:email,uid:'local_'+found.id,displayName:found.name};
-          _userRole=found.role||'user';
-          isAdmin=found.role==='admin';
-          done();_enterApp();return;
-        }
         fail('이메일 또는 비밀번호가 올바르지 않습니다.');
       }else{
         fail('이메일 또는 비밀번호가 올바르지 않습니다.');
       }
     }catch(e){
-      // 네트워크 오류 → DB.users 오프라인 폴백
-      const found=(DB.users||[]).find(u=>u.email===email&&u.pw===pw);
-      if(found){
-        _currentUser={email:email,uid:'local_'+found.id,displayName:found.name};
-        _userRole=found.role||'user';
-        isAdmin=found.role==='admin';
-        done();_enterApp();
-      }else{
-        fail('이메일 또는 비밀번호가 올바르지 않습니다.');
-      }
+      // fetch 자체가 실패한 경우만 여기로 옴 (네트워크 오류 등)
+      console.error('❌ Firebase 로그인 fetch 예외:',e.message,e);
+      fail('네트워크 오류: '+e.message);
     }
   }else{
     fail('이메일 또는 비밀번호가 올바르지 않습니다.');
@@ -3605,6 +3592,15 @@ function _offlineLogin(email,pw,errEl,loadEl,btn){
 
 /* 로그인 후 처리 */
 async function _afterLogin(user){
+  // ⭐ 핵심 버그 수정: initFirebase()는 loadDB() 안에서만 호출되는데,
+  // loadDB()는 _enterApp() 안에서 _afterLogin() 호출 이후에 실행됨.
+  // 즉 이 시점에는 _fbEnabled가 아직 false라서 아래 역할판정 로직 전체가 스킵되고 있었음.
+  // 우리는 이미 doFirebaseLogin에서 Firebase Auth REST 로그인에 성공해 idToken을 받았으므로
+  // Firebase는 명백히 사용 가능한 상태 — 여기서 명시적으로 활성화한다.
+  if(user.uid && !user.uid.startsWith('local_') && _idToken){
+    _fbEnabled=true;
+  }
+  console.log('🔵 _afterLogin 시작 uid='+user.uid+' email='+user.email+' _fbEnabled='+_fbEnabled+' _idToken존재='+!!_idToken);
   try{
     if(_fbEnabled && user.uid && !user.uid.startsWith('local_')){
 
