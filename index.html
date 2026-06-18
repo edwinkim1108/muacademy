@@ -3463,10 +3463,16 @@ async function doFirebaseLogin(){
     if(errEl){errEl.style.display='block';errEl.textContent=msg;}
   };
 
-  // ── 1순위: 오프라인 계정 (항상 동작, 모바일 포함) ──
-  if(_offlineCheck(email,pw)){done();_enterApp();return;}
+  // ── 1순위: 기본 관리자 계정만 오프라인 처리 (admin@admin.com)
+  // DB.users는 Firebase 로그인 실패 시에만 폴백으로 사용
+  const isBuiltinAdmin=(email==='admin@admin.com')&&(pw==='123456'||pw==='1234');
+  if(isBuiltinAdmin){
+    _currentUser={email:email,uid:'local_admin',displayName:'관리자'};
+    _userRole='admin';isAdmin=true;
+    done();_enterApp();return;
+  }
 
-  // ── 2순위: Firebase REST API (dynamic import 없이 순수 fetch) ──
+  // ── 2순위: Firebase REST API로 로그인 (역할은 _afterLogin에서 Firestore 기준 판정)
   const cfg=getFirebaseCfg();
   if(cfg&&cfg.apiKey){
     try{
@@ -3486,14 +3492,29 @@ async function doFirebaseLogin(){
       }
       const code=(data&&data.error&&data.error.message)||'';
       if(code.includes('INVALID')||code.includes('WRONG')||code.includes('EMAIL_NOT_FOUND')||code.includes('PASSWORD')){
+        // Firebase 로그인 실패 → DB.users에서 오프라인 확인 (3순위)
+        const found=(DB.users||[]).find(u=>u.email===email&&u.pw===pw);
+        if(found){
+          _currentUser={email:email,uid:'local_'+found.id,displayName:found.name};
+          _userRole=found.role||'user';
+          isAdmin=found.role==='admin';
+          done();_enterApp();return;
+        }
         fail('이메일 또는 비밀번호가 올바르지 않습니다.');
       }else{
         fail('이메일 또는 비밀번호가 올바르지 않습니다.');
       }
     }catch(e){
-      // 네트워크 오류시 오프라인 재시도
-      if(_offlineCheck(email,pw)){done();_enterApp();}
-      else{fail('이메일 또는 비밀번호가 올바르지 않습니다.');}
+      // 네트워크 오류 → DB.users 오프라인 폴백
+      const found=(DB.users||[]).find(u=>u.email===email&&u.pw===pw);
+      if(found){
+        _currentUser={email:email,uid:'local_'+found.id,displayName:found.name};
+        _userRole=found.role||'user';
+        isAdmin=found.role==='admin';
+        done();_enterApp();
+      }else{
+        fail('이메일 또는 비밀번호가 올바르지 않습니다.');
+      }
     }
   }else{
     fail('이메일 또는 비밀번호가 올바르지 않습니다.');
@@ -3641,9 +3662,31 @@ function _enterApp(){
   const loginEl=document.getElementById('loginScreen');
   if(loginEl) loginEl.style.display='none';
 
-  const role=isAdmin?'👑 관리자':'👤 '+(_currentUser?.displayName||_currentUser?.email?.split('@')[0]||'유저');
+  // 역할 뱃지 — 관리자/읽기전용 명확히 표시
   const badge=document.getElementById('userRoleBadge');
-  if(badge){badge.textContent=role;badge.style.display='inline';}
+  if(badge){
+    if(isAdmin){
+      badge.textContent='👑 관리자';
+      badge.style.background='#1e3a5f';
+      badge.style.color='#7dd3fc';
+    }else{
+      badge.textContent='👁 읽기 전용';
+      badge.style.background='#334155';
+      badge.style.color='#94a3b8';
+    }
+    badge.style.display='inline';
+  }
+  // 관리자 뱃지 상태 동기화
+  const adminBadge=document.getElementById('adminBadge');
+  if(adminBadge){
+    if(isAdmin){
+      adminBadge.classList.add('on');
+      adminBadge.textContent='관리자 ●';
+    }else{
+      adminBadge.classList.remove('on');
+      adminBadge.textContent='관리자';
+    }
+  }
 
   // 1) localStorage 즉시 렌더 (첫 화면 빠르게)
   try{const s=localStorage.getItem(STORE);if(s) Object.assign(DB,JSON.parse(s));}catch(e){}
